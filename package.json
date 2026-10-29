@@ -1,0 +1,42 @@
+{
+  "name": "vidartifax",
+  "version": "0.1.0",
+  "description": "Edit screen recordings and talking-head videos in minutes with Claude Code: cut silences, auto-zoom, burn-in captions. Native ffmpeg, no editor.",
+  "license": "MIT",
+  "author": "AdrielleU",
+  "type": "module",
+  "bin": {
+    "vidartifax": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "skills",
+    ".claude-plugin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test 'test/**/*.test.ts'",
+    "dev": "node src/cli.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "keywords": [
+    "ffmpeg",
+    "video",
+    "claude-code",
+    "captions",
+    "silence-removal",
+    "auto-zoom",
+    "screen-recording"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "5.9"
+  }
+}

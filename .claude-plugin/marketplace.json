@@ -1,0 +1,12 @@
+{
+  "name": "vidartifax",
+  "description": "VidArtifax: edit videos in minutes with Claude Code",
+  "owner": { "name": "AdrielleU" },
+  "plugins": [
+    {
+      "name": "vidartifax",
+      "source": "./",
+      "description": "Cut silences, auto-zoom and caption videos with native ffmpeg."
+    }
+  ]
+}

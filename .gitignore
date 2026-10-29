@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.edited.mp4
+*.preview.mp4
+.vidartifax-tmp/
