@@ -8,8 +8,8 @@ highlight each word as it's spoken. Edits are plain JSON, so Claude Code can
 read the analysis, tweak the plan ("zoom tighter on the settings panel", "keep
 the pause after the demo") and re-render, with no timeline editor.
 
-Rendering is a single native ffmpeg pass. There's no browser, no Electron app
-and no cloud upload.
+Rendering is a single native ffmpeg pass. There's no Electron app and no cloud
+upload. An optional local web editor shows the edit live while Claude works on it.
 
 ```bash
 npx vidartifax auto demo.mp4
@@ -53,6 +53,28 @@ Install the plugin, then just ask:
 Claude runs the analysis, writes `demo.edit.json`, renders a fast preview,
 looks at frames to check the zooms, then renders the final video.
 
+## Web editor
+
+```bash
+vidartifax ui ~/Videos        # then open http://localhost:17211
+```
+
+A local editor for every video in the folder. It plays the source with your
+edit applied live, so you see and hear the cuts, zooms and captions without
+rendering. Use the timeline to cut ranges (`I`, `O`, then `X`), shift-click
+words in the transcript to cut a sentence, add a zoom at the playhead (`Z`)
+and click the video to aim it, switch to vertical, and render the preview or
+the final video.
+
+The edit file stays the source of truth. Every change in the page is saved to
+`<name>.edit.json`, and changes made elsewhere (by Claude Code, the CLI or a
+text editor) show up in the page within a second. So you can keep the editor
+open next to Claude Code, ask for changes in plain words, and fine-tune by
+hand. `Ctrl+Z` undoes, including changes that came from disk.
+
+It listens on 127.0.0.1 only. Use `--port` to change the port and
+`--host 0.0.0.0` inside Docker.
+
 ## Commands
 
 | Command | What it does |
@@ -63,6 +85,7 @@ looks at frames to check the zooms, then renders the final video.
 | `vidartifax render <edit.json>` | Render. `--preview` for a fast 540p draft. |
 | `vidartifax frames <video> --at 3,7.5 --grid` | PNG snapshots with a 10x10 grid for picking zoom points. |
 | `vidartifax validate <edit.json>` | Check an edit file. |
+| `vidartifax ui [folder]` | Web editor at http://localhost:17211 with a live preview. |
 | `vidartifax doctor` | Check ffmpeg and transcription. |
 
 Useful options: `--no-cut`, `--no-zoom`, `--no-captions`, `--min-silence 0.8`,

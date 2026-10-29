@@ -64,4 +64,9 @@ Run it as `vidartifax` if it's on PATH, otherwise `npx -y vidartifax`. Run
 - Re-running `analyze` reuses an existing transcript unless `--force` is given.
 - Silence threshold: `--noise -40` for quiet recordings, `-30` for noisy ones.
   Shorter pauses: `plan --min-silence 0.4`. More breathing room: `--pad 0.25`.
+- The user may have `vidartifax ui` open (http://localhost:17211). It reloads
+  `<name>.edit.json` whenever you write it, so your edits appear there live,
+  and the user's edits in the page land in the same file: re-read the file
+  before changing it instead of relying on an earlier copy. Suggest
+  `vidartifax ui "<folder>"` when the user wants to review or fine-tune by hand.
 - Never overwrite the source video. Outputs go to `<name>.edited.mp4` by default.

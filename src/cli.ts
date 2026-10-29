@@ -8,6 +8,7 @@ import { checkFfmpeg, ffmpegMajor } from "./ffmpeg.ts";
 import { snapshot } from "./frames.ts";
 import { plan, type Analysis, type PlanOptions } from "./plan.ts";
 import { loadSpec, render, type RenderResult } from "./render.ts";
+import { DEFAULT_PORT, startUi } from "./ui/server.ts";
 
 const HELP = `VidArtifax: edit videos with native ffmpeg, made for Claude Code
 
@@ -18,6 +19,7 @@ Usage:
   vidartifax render <edit.json> [--preview] render the edit to MP4
   vidartifax frames <video> --at 3,7.5      PNG snapshots (--grid to read focus points, --width px)
   vidartifax validate <edit.json>           check an edit file
+  vidartifax ui [folder]                    web editor at http://localhost:17211 (--port, --host)
   vidartifax doctor                         check ffmpeg and transcription setup
 
 Analyze options:
@@ -60,6 +62,8 @@ const opts = {
     grid: { type: "boolean" },
     width: { type: "string" },
     json: { type: "boolean" },
+    port: { type: "string" },
+    host: { type: "string" },
 } as const;
 
 type Values = ReturnType<typeof parseArgs<{ options: typeof opts; allowPositionals: true }>>["values"];
@@ -175,6 +179,18 @@ async function main() {
         case "validate": {
             const spec = loadSpec(need(arg, "edit file"));
             log(`${basename(arg!)} is valid: ${spec.keep?.length ?? "all"} kept ranges, ${spec.zooms?.length ?? 0} zooms, captions ${spec.captions ? "on" : "off"}`);
+            break;
+        }
+        case "ui": {
+            const dir = arg ?? ".";
+            if (!existsSync(dir)) throw new Error(`${dir} not found`);
+            checkFfmpeg();
+            const port = num(v.port, "port") ?? DEFAULT_PORT;
+            const { url } = await startUi({ dir, port, host: v.host, log }).catch((e: NodeJS.ErrnoException) => {
+                throw e.code === "EADDRINUSE" ? new Error(`port ${port} is in use; pick another with --port`) : e;
+            });
+            log(`VidArtifax UI for ${resolve(dir)}`);
+            log(`open ${url}  (Ctrl+C to stop)`);
             break;
         }
         case "doctor": {
