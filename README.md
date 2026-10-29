@@ -16,6 +16,18 @@ npx vidartifax auto demo.mp4
 # -> demo.analysis.json, demo.transcript.json, demo.edit.json, demo.edited.mp4
 ```
 
+## Why VidArtifax
+
+I wanted to edit demos and tutorials by describing the edit to Claude Code,
+not by dragging clips around a timeline. The existing tools I tried got in the
+way. Some had licenses that rule out commercial use, so you can't use them for
+work or build on them. Others only render inside a browser editor, which is
+slow and can't be scripted.
+
+So VidArtifax is MIT licensed: use it for personal or commercial videos, fork
+it, ship it in your own products. It runs as a plain command-line tool on
+native ffmpeg, so Claude Code (or a script, or CI) can drive it end to end.
+
 ## Requirements
 
 - Node.js 20+
@@ -90,4 +102,4 @@ the zooms or captions. Full reference: [skills/vidartifax/edit-format.md](skills
 
 ## License
 
-MIT
+[MIT](LICENSE). Free for personal and commercial use.
