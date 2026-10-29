@@ -146,6 +146,13 @@ test("auto-zoom picks the strongest events and spaces them out", () => {
     close(zooms[0]!.scale, 2.2);
 });
 
+test("auto-zoom skips events that land in cut footage", () => {
+    const box = { x0: 0.4, y0: 0.4, x1: 0.6, y1: 0.6 };
+    const events = [{ start: 3, end: 4, box, energy: 500 }, { start: 10, end: 11, box, energy: 100 }];
+    const keep = [{ start: 0, end: 2 }, { start: 9, end: 15 }];
+    assert.deepEqual(zoomsFromActivity(events, 20, 2.2, keep).map(z => z.start), [9.6]);
+});
+
 test("SRT import spreads words across each cue", () => {
     const words = subtitlesToWords("1\n00:00:01,000 --> 00:00:02,000\nab cd\n\n2\n00:00:03.000 --> 00:00:04.000\n<i>x</i>\n");
     assert.deepEqual(words.map(w => [w.text, w.start, w.end]), [["ab", 1, 1.5], ["cd", 1.5, 2], ["x", 3, 4]]);

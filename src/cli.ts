@@ -16,7 +16,7 @@ Usage:
   vidartifax analyze <video>                silences, on-screen activity, transcript
   vidartifax plan <video>                   write <name>.edit.json from the analysis
   vidartifax render <edit.json> [--preview] render the edit to MP4
-  vidartifax frames <video> --at 3,7.5      PNG snapshots (add --grid to read focus points)
+  vidartifax frames <video> --at 3,7.5      PNG snapshots (--grid to read focus points, --width px)
   vidartifax validate <edit.json>           check an edit file
   vidartifax doctor                         check ffmpeg and transcription setup
 
@@ -58,6 +58,7 @@ const opts = {
     "max-zoom": { type: "string" },
     at: { type: "string" },
     grid: { type: "boolean" },
+    width: { type: "string" },
     json: { type: "boolean" },
 } as const;
 
@@ -167,7 +168,7 @@ async function main() {
         case "frames": {
             if (!v.at) throw new Error("--at is required, e.g. --at 3,7.5");
             const at = v.at.split(",").map(s => num(s.trim(), "at")!);
-            const files = await snapshot(need(arg, "video"), { at, grid: v.grid, outDir: v.output });
+            const files = await snapshot(need(arg, "video"), { at, grid: v.grid, outDir: v.output, width: num(v.width, "width") });
             for (const f of files) process.stdout.write(f + "\n");
             break;
         }

@@ -66,7 +66,10 @@ export function zoomFilter(zooms: OutputZoom[], fps: number): string | null {
     const [x2, y2] = corner("ld(1)", "ld(2)+ld(4)");
     const [x3, y3] = corner("ld(1)+ld(3)", "ld(2)+ld(4)");
     const q = (s: string | undefined) => `'${s}'`;
-    return `perspective=x0=${q(x0)}:y0=${q(y0)}:x1=${q(x1)}:y1=${q(y1)}:x2=${q(x2)}:y2=${q(y2)}:x3=${q(x3)}:y3=${q(y3)}:interpolation=linear:sense=source:eval=frame`;
+    // Bypass the filter outside zoom windows: rebuilding the warp map every
+    // frame is the most expensive part of a render.
+    const enable = zooms.map(z => `between(t,${n(z.start)},${n(z.end)})`).join("+");
+    return `perspective=x0=${q(x0)}:y0=${q(y0)}:x1=${q(x1)}:y1=${q(y1)}:x2=${q(x2)}:y2=${q(y2)}:x3=${q(x3)}:y3=${q(y3)}:interpolation=linear:sense=source:eval=frame:enable=${q(enable)}`;
 }
 
 /** Plain-JS version of the zoom curve, for tests and previews. */

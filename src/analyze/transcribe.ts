@@ -20,18 +20,19 @@ function hasCommand(cmd: string, args: string[]): boolean {
 }
 
 /**
- * Transcribes with faster-whisper. Prefers `uv` (installs faster-whisper in
- * an isolated cache on first use), falls back to a python3 that already has it.
+ * Transcribes with faster-whisper. Uses a python3 that already has it (e.g.
+ * the Docker image), otherwise `uv`, which installs it in an isolated cache on
+ * first use.
  */
 export async function transcribe(video: string, outFile: string, opts: TranscribeOptions = {}): Promise<Transcript> {
     let cmd: string;
     let pre: string[];
-    if (hasCommand("uv", ["--version"])) {
-        cmd = "uv";
-        pre = ["run", "--quiet", "--no-project", "--with", "faster-whisper", "python", SCRIPT];
-    } else if (hasCommand("python3", ["-c", "import faster_whisper"])) {
+    if (hasCommand("python3", ["-c", "import faster_whisper"])) {
         cmd = "python3";
         pre = [SCRIPT];
+    } else if (hasCommand("uv", ["--version"])) {
+        cmd = "uv";
+        pre = ["run", "--quiet", "--no-project", "--with", "faster-whisper", "python", SCRIPT];
     } else {
         throw new Error(
             "Transcription needs faster-whisper. Install uv (https://docs.astral.sh/uv/) " +
@@ -42,7 +43,7 @@ export async function transcribe(video: string, outFile: string, opts: Transcrib
     const dir = mkdtempSync(join(tmpdir(), "vidartifax-"));
     try {
         const wav = join(dir, "audio.wav");
-        await run(["-y", "-i", video, "-vn", "-ac", "1", "-ar", "16000", wav]);
+        await run(["-y", "-i", video, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav]);
         const args = [...pre, wav, outFile, "--model", opts.model ?? "base"];
         if (opts.language) args.push("--language", opts.language);
         await new Promise<void>((resolve, reject) => {

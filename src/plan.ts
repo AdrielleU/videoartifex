@@ -22,8 +22,17 @@ export interface PlanOptions extends CutOptions {
     maxScale?: number;
 }
 
-/** Auto-zoom heuristics for screen recordings. */
-export function zoomsFromActivity(events: ActivityEvent[], duration: number, maxScale = 2.2): Zoom[] {
+/** Seconds of a range that survive the cuts. */
+function keptSeconds(r: Range, keep: Range[] | undefined): number {
+    if (!keep) return r.end - r.start;
+    return keep.reduce((n, k) => n + Math.max(0, Math.min(r.end, k.end) - Math.max(r.start, k.start)), 0);
+}
+
+/**
+ * Auto-zoom heuristics for screen recordings. With `keep`, zooms that would
+ * mostly land in cut footage are skipped, so they aren't wasted on pauses.
+ */
+export function zoomsFromActivity(events: ActivityEvent[], duration: number, maxScale = 2.2, keep?: Range[]): Zoom[] {
     const candidates: { zoom: Zoom; energy: number }[] = [];
     for (const e of events) {
         const bw = e.box.x1 - e.box.x0;
@@ -33,6 +42,7 @@ export function zoomsFromActivity(events: ActivityEvent[], duration: number, max
         if (scale < 1.3 || e.energy < 40) continue;
         const start = Math.max(0, e.start - 0.4);
         const end = Math.min(duration, Math.max(e.end + 1.2, start + 2.2));
+        if (keptSeconds({ start, end }, keep) < 1.2) continue;
         candidates.push({
             energy: e.energy,
             zoom: {
@@ -62,7 +72,7 @@ export function plan(analysis: Analysis, opts: PlanOptions = {}): EditSpec {
         spec.keep = keepFromSilences(analysis.silences, duration, opts).map(r => ({ start: round(r.start), end: round(r.end) }));
     }
     if (opts.zooms !== false) {
-        const zooms = zoomsFromActivity(analysis.activity, duration, opts.maxScale);
+        const zooms = zoomsFromActivity(analysis.activity, duration, opts.maxScale, spec.keep);
         if (zooms.length) spec.zooms = zooms;
     }
     if (opts.captions !== false && analysis.transcript) {

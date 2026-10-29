@@ -1,6 +1,6 @@
 """Word-level transcription with faster-whisper.
 
-Usage: uv run --with faster-whisper python transcribe.py AUDIO OUT.json [--model base] [--language en]
+Usage: uv run --with faster-whisper python transcribe.py AUDIO.wav OUT.json [--model base] [--language en]
 
 Writes {"language": "...", "words": [{"start", "end", "text"}]} with times in seconds.
 """
@@ -18,11 +18,22 @@ def main() -> None:
     p.add_argument("--device", default="auto")
     args = p.parse_args()
 
+    import wave
+
+    import numpy as np
     from faster_whisper import WhisperModel
+
+    # The caller hands us 16 kHz mono 16-bit WAV. Reading it here instead of
+    # letting faster-whisper open the file avoids its PyAV decoder, whose API
+    # changes between releases.
+    with wave.open(args.audio, "rb") as w:
+        if w.getframerate() != 16000 or w.getnchannels() != 1 or w.getsampwidth() != 2:
+            sys.exit("expected 16 kHz mono 16-bit WAV")
+        audio = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
 
     model = WhisperModel(args.model, device=args.device, compute_type="int8")
     segments, info = model.transcribe(
-        args.audio,
+        audio,
         language=args.language,
         word_timestamps=True,
         vad_filter=True,
