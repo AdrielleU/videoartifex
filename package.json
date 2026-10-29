@@ -1,12 +1,12 @@
 {
-  "name": "vidartifax",
+  "name": "videoartifex",
   "version": "0.1.0",
   "description": "Edit screen recordings and talking-head videos in minutes with Claude Code: cut silences, auto-zoom, burn-in captions. Native ffmpeg, no editor.",
   "license": "MIT",
   "author": "AdrielleU",
   "type": "module",
   "bin": {
-    "vidartifax": "dist/cli.js"
+    "videoartifex": "dist/cli.js"
   },
   "files": [
     "dist",

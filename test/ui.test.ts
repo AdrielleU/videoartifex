@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { startUi } from "../src/ui/server.ts";
 
 test("ui lists videos, saves only valid edits, and stays inside its folder", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "vidartifax-ui-"));
+    const dir = mkdtempSync(join(tmpdir(), "videoartifex-ui-"));
     writeFileSync(join(dir, "a.mp4"), "not really a video");
     writeFileSync(join(dir, "a.edited.mp4"), "output");
     const ui = await startUi({ dir, port: 0 });

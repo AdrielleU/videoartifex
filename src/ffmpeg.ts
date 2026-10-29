@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 
-export const FFMPEG = process.env.VIDARTIFAX_FFMPEG ?? "ffmpeg";
-export const FFPROBE = process.env.VIDARTIFAX_FFPROBE ?? "ffprobe";
+export const FFMPEG = process.env.VIDEOARTIFEX_FFMPEG ?? "ffmpeg";
+export const FFPROBE = process.env.VIDEOARTIFEX_FFPROBE ?? "ffprobe";
 
 export class FfmpegError extends Error { }
 
@@ -11,6 +11,8 @@ export interface MediaInfo {
     height: number;
     fps: number;
     hasAudio: boolean;
+    /** Recording time from the file's metadata, when present (ISO 8601). */
+    created?: string;
 }
 
 /** Fails with install instructions if ffmpeg is missing or lacks what we need. */
@@ -19,7 +21,7 @@ export function checkFfmpeg(): { version: string; filters: Set<string> } {
     if (v.error || v.status !== 0) {
         throw new FfmpegError(
             "ffmpeg not found. Install it (macOS: `brew install ffmpeg`, Ubuntu/Debian: `sudo apt install ffmpeg`, " +
-            "Windows: `winget install ffmpeg`) or set VIDARTIFAX_FFMPEG to its path.",
+            "Windows: `winget install ffmpeg`) or set VIDEOARTIFEX_FFMPEG to its path.",
         );
     }
     const f = spawnSync(FFMPEG, ["-hide_banner", "-filters"], { encoding: "utf8" });
@@ -41,10 +43,10 @@ export function probe(file: string): MediaInfo {
     const r = spawnSync(FFPROBE, [
         "-v", "error", "-print_format", "json", "-show_format", "-show_streams", file,
     ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-    if (r.error) throw new FfmpegError(`ffprobe not found (set VIDARTIFAX_FFPROBE): ${r.error.message}`);
+    if (r.error) throw new FfmpegError(`ffprobe not found (set VIDEOARTIFEX_FFPROBE): ${r.error.message}`);
     if (r.status !== 0) throw new FfmpegError(`ffprobe failed on ${file}: ${r.stderr.trim()}`);
     const data = JSON.parse(r.stdout) as {
-        format?: { duration?: string };
+        format?: { duration?: string; tags?: { creation_time?: string } };
         streams?: { codec_type?: string; width?: number; height?: number; avg_frame_rate?: string; r_frame_rate?: string; duration?: string }[];
     };
     const video = data.streams?.find(s => s.codec_type === "video");
@@ -62,6 +64,7 @@ export function probe(file: string): MediaInfo {
         height: video.height,
         fps,
         hasAudio: !!data.streams?.some(s => s.codec_type === "audio"),
+        ...(data.format?.tags?.creation_time ? { created: data.format.tags.creation_time } : {}),
     };
 }
 

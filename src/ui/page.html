@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VidArtifax</title>
+<title>VideoArtifex</title>
 <style>
 :root {
     --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --line: #2a2f3a;
@@ -93,6 +93,33 @@ textarea#json { width: 100%; height: 360px; font: 12px/1.4 ui-monospace, Menlo, 
 #status { padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--dim); min-height: 30px; }
 #status.err { color: var(--cut); }
 #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--accent); padding: 7px 14px; border-radius: 6px; box-shadow: 0 6px 20px #0008; }
+#board { display: flex; gap: 8px; padding: 8px 12px; overflow-x: auto; border-top: 1px solid var(--line); background: var(--panel); }
+.shot { flex: none; width: 168px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px; cursor: pointer; position: relative; }
+.shot.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.shot.drop { border-color: var(--warn); border-style: dashed; }
+.shot img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; background: #000; display: block; }
+.shot .t { font-weight: 600; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shot .f { color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shot .n { position: absolute; top: 10px; left: 10px; background: #000b; border-radius: 4px; padding: 0 6px; font-size: 11px; font-weight: 600; }
+.shot .m { position: absolute; top: 10px; right: 10px; border-radius: 4px; padding: 0 6px; font-size: 11px; background: #1d3b2a; color: var(--keep); }
+.shot .m.low { background: #3b2f12; color: var(--warn); }
+.shot .b { display: flex; gap: 4px; margin-top: 5px; }
+.shot .b button { padding: 1px 7px; font-size: 11px; }
+.shot.add { display: flex; flex-direction: column; justify-content: center; gap: 6px; cursor: default; border-style: dashed; }
+.shot.add select { width: 100%; }
+.side-h { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin: 10px 4px 4px; }
+.side-h:first-child { margin-top: 2px; }
+#videos > button { width: 100%; margin: 4px 0 2px; }
+.warn { border-color: var(--warn); }
+.warn h4 { color: var(--warn); margin: 0 0 4px; font-size: 12px; }
+.plan-item { cursor: pointer; }
+.plan-item.sel { border-color: var(--accent); }
+.plan-item .s { color: var(--dim); font-size: 12px; margin-top: 3px; }
+dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 16px; width: min(460px, calc(100vw - 32px)); }
+dialog::backdrop { background: #0009; }
+dialog h3 { margin: 0 0 6px; }
+dialog .list { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
+dialog .list label { display: block; padding: 3px 0; }
 [hidden] { display: none !important; }
 
 @media (max-width: 1000px) {
@@ -106,7 +133,7 @@ textarea#json { width: 100%; height: 360px; font: 12px/1.4 ui-monospace, Menlo, 
 <body>
 <header>
     <span class="dot" id="conn" title="Live connection to the folder"></span>
-    <h1>VidArtifax</h1>
+    <h1>VideoArtifex</h1>
     <span class="dir" id="dir"></span>
     <span id="job" hidden><span id="jobtext"></span><progress id="jobbar" max="1" value="0"></progress></span>
 </header>
@@ -132,6 +159,7 @@ textarea#json { width: 100%; height: 360px; font: 12px/1.4 ui-monospace, Menlo, 
                 <button data-mode="edited" title="The last final render">Final</button>
             </span>
         </div>
+        <div id="board" hidden></div>
         <canvas id="timeline"></canvas>
     </div>
     <div id="side">
@@ -142,6 +170,7 @@ textarea#json { width: 100%; height: 360px; font: 12px/1.4 ui-monospace, Menlo, 
             <button id="a-render" class="primary" title="Full-quality render">Render final</button>
         </div>
         <div id="tabs">
+            <button data-tab="plan" hidden>Plan</button>
             <button data-tab="cuts" class="on">Cuts</button>
             <button data-tab="zooms">Zooms</button>
             <button data-tab="captions">Captions</button>
@@ -156,6 +185,18 @@ textarea#json { width: 100%; height: 360px; font: 12px/1.4 ui-monospace, Menlo, 
     </div>
 </main>
 <div id="toast" hidden></div>
+<dialog id="merge">
+    <h3>Merge videos</h3>
+    <p class="hint">Plans one video from several clips. With a script, clips are put in script order and trimmed to the best take of each line. Without one, they follow recording order. You review the plan before anything renders.</p>
+    <div class="side-h">Clips</div>
+    <div class="list" id="m-videos"></div>
+    <div class="row"><label>script</label><select id="m-script"></select></div>
+    <div class="row"><label>name</label><input id="m-name" placeholder="merged"><span class="hint">.sequence.json</span></div>
+    <div class="row" style="justify-content:flex-end">
+        <button id="m-cancel">Cancel</button>
+        <button id="m-go" class="primary">Plan it</button>
+    </div>
+</dialog>
 
 <script type="module">
 import { buildTimeline, outputDuration, toOutput } from "/lib/timeline__LIB_EXT__";
@@ -187,6 +228,8 @@ const S = {
     marks: { in: null, out: null }, selZoom: -1, wordAnchor: -1, wordSel: null,
     undo: [], redo: [], savedText: null, saveTimer: null, saveError: null,
     job: null,
+    // Sequence mode: S.seq is the whole file, S.edit is a view of item S.item.
+    seq: null, seqData: null, item: 0, scripts: [], sequences: [], pendingOpen: null, pendingSeek: null, pendingPlay: false,
 };
 const video = $("src");
 const outVideo = $("out");
@@ -235,30 +278,174 @@ function restoreRange(a, b) {
 /** Applies a change to the edit, records undo, refreshes, and saves. */
 function change(fn, { record = true } = {}) {
     if (!S.edit) return;
-    const before = JSON.stringify(S.edit);
-    const next = JSON.parse(before);
+    const before = snap();
+    const old = JSON.stringify(S.edit);
+    const next = JSON.parse(old);
     fn(next);
-    const after = JSON.stringify(next);
-    if (after === before) return;
-    if (record) { S.undo.push(before); if (S.undo.length > 200) S.undo.shift(); S.redo = []; }
+    if (JSON.stringify(next) === old) return;
+    if (record) pushUndo(before);
+    if (S.seq) applyItemEdit(next);
     S.edit = next;
-    derive();
-    renderSide();
-    drawTimeline();
+    refresh();
     scheduleSave();
 }
 
-function undo() {
-    if (!S.undo.length) return;
-    S.redo.push(JSON.stringify(S.edit));
-    S.edit = JSON.parse(S.undo.pop());
-    derive(); renderSide(); drawTimeline(); scheduleSave();
+/** Changes the sequence itself (order, clips). */
+function changeSeq(fn) {
+    const before = snap();
+    fn(S.seq);
+    if (snap() === before) return;
+    pushUndo(before);
+    S.item = Math.max(0, Math.min(S.item, S.seq.items.length - 1));
+    selectItem(S.item, { keepTime: true });
+    scheduleSave();
 }
-function redoEdit() {
-    if (!S.redo.length) return;
-    S.undo.push(JSON.stringify(S.edit));
-    S.edit = JSON.parse(S.redo.pop());
-    derive(); renderSide(); drawTimeline(); scheduleSave();
+
+const snap = () => JSON.stringify(S.seq ?? S.edit);
+function pushUndo(before) { S.undo.push(before); if (S.undo.length > 200) S.undo.shift(); S.redo = []; }
+function restore(text) {
+    if (S.seq) {
+        S.seq = JSON.parse(text);
+        S.item = Math.min(S.item, S.seq.items.length - 1);
+        selectItem(S.item, { keepTime: true });
+    } else {
+        S.edit = JSON.parse(text);
+        refresh();
+    }
+    scheduleSave();
+}
+function undo() { if (S.undo.length) { S.redo.push(snap()); restore(S.undo.pop()); } }
+function redoEdit() { if (S.redo.length) { S.undo.push(snap()); restore(S.redo.pop()); } }
+
+function refresh() { derive(); renderSide(); renderBoard(); drawTimeline(); }
+
+// ---------- sequences ----------
+
+/** The edit-file view of one sequence item, so the clip tools work on it unchanged. */
+function itemEdit(i) {
+    const it = S.seq.items[i];
+    const e = { version: 1, input: it.input };
+    if (it.keep) e.keep = it.keep;
+    if (it.zooms) e.zooms = it.zooms;
+    e.captions = S.seq.captions ? { ...S.seq.captions, transcript: "-" } : false;
+    if (S.seq.output) e.output = S.seq.output;
+    return structuredClone(e);
+}
+
+function applyItemEdit(e) {
+    const it = S.seq.items[S.item];
+    if (e.keep) it.keep = e.keep; else delete it.keep;
+    if (e.zooms?.length) it.zooms = e.zooms; else delete it.zooms;
+    if (e.captions) { const { transcript, ...style } = e.captions; S.seq.captions = style; } else S.seq.captions = false;
+    if (e.output) S.seq.output = e.output; else delete S.seq.output;
+}
+
+function itemLength(i) {
+    const info = S.seqData.items[i];
+    if (!info?.media) return 0;
+    return outputDuration(buildTimeline(S.seq.items[i].keep, info.media.duration, 30));
+}
+
+function selectItem(i, { play = false, keepTime = false } = {}) {
+    const it = S.seq.items[i];
+    const info = S.seqData.items[i];
+    S.item = i;
+    if (!it || !info || info.error) {
+        S.proj = null; S.edit = null;
+        setStatus(info?.error ? `Clip ${i + 1}: ${info.error}` : "Empty sequence", true);
+        renderSide(); renderBoard(); drawTimeline();
+        return;
+    }
+    const src = `/file/${encodeURIComponent(it.input)}`;
+    const same = video.getAttribute("src") === src;
+    S.proj = { name: it.input, ...info, outputs: S.seqData.outputs, outStem: S.seqData.outStem };
+    S.edit = itemEdit(i);
+    S.selZoom = -1; S.marks = { in: null, out: null }; S.wordSel = null;
+    derive();
+    // Start on the first kept frame (cuts snap to the frame grid).
+    const start = (S.derived.segments[0]?.start ?? 0) + 0.001;
+    if (!same) {
+        video.pause();
+        S.pendingSeek = start;
+        S.pendingPlay = play;
+        video.setAttribute("src", src);
+    } else if (!keepTime) {
+        video.currentTime = start;
+        if (play) video.play();
+    }
+    renderSide(); renderBoard(); drawTimeline();
+}
+
+video.addEventListener("loadedmetadata", () => {
+    if (S.pendingSeek != null) { video.currentTime = S.pendingSeek; S.pendingSeek = null; }
+    if (S.pendingPlay) { S.pendingPlay = false; video.play(); }
+});
+
+function moveItem(from, to, { infoMoved = false } = {}) {
+    if (to < 0 || to >= S.seq.items.length || from === to) return;
+    if (!infoMoved) { const [info] = S.seqData.items.splice(from, 1); S.seqData.items.splice(to, 0, info); }
+    const wasCurrent = S.item === from;
+    S.item = to;
+    changeSeq(seq => { const [it] = seq.items.splice(from, 1); seq.items.splice(to, 0, it); });
+    if (!wasCurrent) selectItem(to);
+}
+
+async function addClip(name) {
+    if (!name) return;
+    const info = await api(`/api/project?v=${encodeURIComponent(name)}`).catch(e => ({ error: e.message }));
+    const at = S.item + 1;
+    S.seqData.items.splice(at, 0, info.error ? { error: info.error } : { media: info.media, silences: info.silences, activity: info.activity, words: info.words, analyzed: info.analyzed });
+    changeSeq(seq => { seq.items.splice(at, 0, { input: name, title: stem(name) }); });
+    selectItem(at);
+    toast(`Added ${name}: trim it in the Cuts tab`);
+}
+
+function removeItem(i) {
+    if (S.seq.items.length === 1) return toast("A sequence needs at least one clip");
+    S.seqData.items.splice(i, 1);
+    changeSeq(seq => { seq.items.splice(i, 1); });
+}
+
+function renderBoard() {
+    const board = $("board");
+    board.hidden = !S.seq;
+    if (!S.seq) return;
+    let dragFrom = -1;
+    const cards = S.seq.items.map((it, i) => {
+        const info = S.seqData.items[i] ?? {};
+        const t = (it.keep?.[0]?.start ?? 0) + 0.4;
+        const len = itemLength(i);
+        const card = el("div", { className: "shot" + (i === S.item ? " sel" : ""), draggable: true, title: it.script ?? it.input },
+            el("img", { src: info.error ? "" : `/api/thumb?f=${encodeURIComponent(it.input)}&t=${t.toFixed(2)}`, alt: "", loading: "lazy" }),
+            el("span", { className: "n", textContent: i + 1 }),
+            it.match != null ? el("span", { className: "m" + (it.match < 0.8 ? " low" : ""), textContent: `${Math.round(it.match * 100)}%`, title: "How closely this take matches the script" }) : "",
+            el("div", { className: "t", textContent: it.title || stem(it.input) }),
+            el("div", { className: "f", textContent: info.error ? info.error : `${it.input} · ${len.toFixed(1)} s` }),
+            el("div", { className: "b" },
+                el("button", { textContent: "<", title: "Move earlier", disabled: i === 0, onclick: e => { e.stopPropagation(); moveItem(i, i - 1); } }),
+                el("button", { textContent: ">", title: "Move later", disabled: i === S.seq.items.length - 1, onclick: e => { e.stopPropagation(); moveItem(i, i + 1); } }),
+                el("button", { className: "danger", textContent: "Remove", onclick: e => { e.stopPropagation(); removeItem(i); } }),
+            ),
+        );
+        card.onclick = () => selectItem(i);
+        card.ondragstart = e => { dragFrom = i; e.dataTransfer.effectAllowed = "move"; };
+        card.ondragover = e => { e.preventDefault(); card.classList.add("drop"); };
+        card.ondragleave = () => card.classList.remove("drop");
+        card.ondrop = e => {
+            e.preventDefault();
+            card.classList.remove("drop");
+            if (dragFrom >= 0) {
+                const info2 = S.seqData.items.splice(dragFrom, 1)[0];
+                S.seqData.items.splice(i, 0, info2);
+                moveItem(dragFrom, i, { infoMoved: true });
+            }
+        };
+        return card;
+    });
+    const pick = el("select", {}, el("option", { value: "", textContent: "Add a clip…" }), ...S.videos.map(v => el("option", { value: v.name, textContent: v.name })));
+    pick.onchange = () => addClip(pick.value);
+    cards.push(el("div", { className: "shot add" }, el("div", { className: "hint", textContent: `${S.seq.items.length} clips · ${fmt(S.seqTotal ?? 0)}` }), pick));
+    board.replaceChildren(...cards);
 }
 
 function scheduleSave() {
@@ -268,12 +455,14 @@ function scheduleSave() {
 }
 
 async function save() {
-    const text = JSON.stringify(S.edit, null, 2) + "\n";
+    S.saveTimer = null;
+    const text = JSON.stringify(S.seq ?? S.edit, null, 2) + "\n";
+    const url = S.seq ? `/api/sequence?s=${encodeURIComponent(S.current)}` : `/api/edit?v=${encodeURIComponent(S.current)}`;
     try {
-        await api(`/api/edit?v=${encodeURIComponent(S.current)}`, { method: "PUT", body: text });
+        await api(url, { method: "PUT", body: text });
         S.savedText = text;
         S.saveError = null;
-        setStatus(`Saved to ${stem(S.current)}.edit.json`);
+        setStatus(`Saved to ${S.seq ? S.current : stem(S.current) + ".edit.json"}`);
     } catch (e) {
         S.saveError = e.message;
         setStatus(`Not saved: ${e.message}`, true);
@@ -303,6 +492,10 @@ function derive() {
     const cues = c && S.proj.words.length
         ? groupCues(wordsToOutput(S.proj.words, segments), c.maxWords ?? 4, c.maxChars ?? 28)
         : [];
+    if (S.seq) {
+        S.seqOffset = S.seq.items.slice(0, S.item).reduce((n, _, i) => n + itemLength(i), 0);
+        S.seqTotal = S.seq.items.reduce((n, _, i) => n + itemLength(i), 0);
+    }
     S.derived = {
         segments, zooms, cues, fps,
         outDuration: outputDuration(segments),
@@ -362,7 +555,7 @@ function styleCaptions() {
 function paint() {
     if (!S.proj || !S.derived) return;
     const live = S.mode === "live";
-    const t = live ? video.currentTime : toSource(outVideo.currentTime);
+    const t = live ? video.currentTime : S.seq ? null : toSource(outVideo.currentTime);
     const ot = live ? toOutput(S.derived.segments, video.currentTime) : outVideo.currentTime;
     S.now = t;
 
@@ -396,7 +589,11 @@ function paint() {
     } else f.hidden = true;
 
     const dur = S.proj.media.duration;
-    $("time").textContent = `source ${fmt(t)} / ${fmt(dur)} · output ${fmt(ot)} / ${fmt(S.derived.outDuration)}`;
+    if (S.seq) {
+        $("time").textContent = live
+            ? `clip ${S.item + 1}/${S.seq.items.length} · source ${fmt(t)} · video ${fmt(ot == null ? null : S.seqOffset + ot)} / ${fmt(S.seqTotal)}`
+            : `video ${fmt(outVideo.currentTime)} / ${fmt(outVideo.duration)}`;
+    } else $("time").textContent = `source ${fmt(t)} / ${fmt(dur)} · output ${fmt(ot)} / ${fmt(S.derived.outDuration)}`;
     $("play").textContent = (live ? video.paused : outVideo.paused) ? "▶" : "❚❚";
     highlightWord(t);
 }
@@ -418,10 +615,11 @@ function tick() {
         if (toOutput(S.derived.segments, t) == null) {
             const next = S.derived.segments.find(s => s.start > t);
             if (next) video.currentTime = next.start + 0.001;
+            else if (S.seq && S.item < S.seq.items.length - 1 && S.pendingSeek == null) selectItem(S.item + 1, { play: true });
             else video.pause();
         }
     }
-    paint();
+    if (S.proj) paint();
     drawTimeline();
     requestAnimationFrame(tick);
 }
@@ -447,14 +645,15 @@ function togglePlay() {
 }
 
 function setMode(mode) {
-    const file = mode === "live" ? null : `${stem(S.current)}.${mode}.mp4`;
-    if (file && !S.proj.outputs[mode]) return toast(mode === "preview" ? "No preview render yet: click Render preview" : "No final render yet: click Render final");
+    if (!S.proj) return;
+    const file = mode === "live" ? null : `${S.proj.outStem}.${mode}.mp4`;
+    if (file && !S.proj.outputs[mode]) { toast(mode === "preview" ? "No preview render yet: click Render preview" : "No final render yet: click Render final"); mode = "live"; }
     video.pause(); outVideo.pause();
     S.mode = mode;
     for (const b of $("modes").children) b.classList.toggle("on", b.dataset.mode === mode);
     outVideo.hidden = mode === "live";
     $("pic").hidden = mode !== "live";
-    if (file) {
+    if (mode !== "live") {
         const src = `/file/${encodeURIComponent(file)}?t=${S.proj.outputs[mode]}`;
         if (!outVideo.src.endsWith(src)) outVideo.src = src;
         // Rendered files have their own frame; the output frame box already matches it.
@@ -588,8 +787,15 @@ function num(value, onChange, { step = 0.1, min, max } = {}) {
 
 function renderSide() {
     const pane = $("pane");
-    if (!S.proj) { pane.replaceChildren(); return; }
+    const planTab = document.querySelector("[data-tab=plan]");
+    planTab.hidden = !S.seq;
+    if (!S.seq && S.tab === "plan") S.tab = "cuts";
     for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.tab === S.tab);
+    $("a-analyze").hidden = !!S.seq;
+    $("a-plan").textContent = S.seq ? "Re-plan" : "Auto plan";
+    $("actions").style.gridTemplateColumns = S.seq ? "1fr 1fr 1fr" : "";
+    if (S.seq && (S.tab === "plan" || S.tab === "json")) { pane.replaceChildren(S.tab === "plan" ? planPane() : jsonPane()); return; }
+    if (!S.proj) { pane.replaceChildren(); return; }
     if (!S.edit) {
         pane.replaceChildren(
             el("p", { className: "hint", textContent: S.proj.editError ? `The edit file has an error: ${S.proj.editError}` : "No edit yet." }),
@@ -598,7 +804,55 @@ function renderSide() {
         if (S.proj.editError && S.tab === "json") pane.append(jsonPane());
         return;
     }
-    pane.replaceChildren(({ cuts: cutsPane, zooms: zoomsPane, captions: captionsPane, output: outputPane, json: jsonPane })[S.tab]());
+    const body = ({ cuts: cutsPane, zooms: zoomsPane, captions: captionsPane, output: outputPane, json: jsonPane })[S.tab]();
+    if (S.seq && S.tab !== "output") {
+        const it = S.seq.items[S.item];
+        pane.replaceChildren(el("p", { className: "hint", innerHTML: "" }, el("b", { textContent: `Clip ${S.item + 1}: ${it.title || stem(it.input)}` }), ` (${it.input})${S.tab === "captions" ? ". Caption style applies to the whole video." : ""}`), body);
+    } else pane.replaceChildren(body);
+}
+
+function planPane() {
+    const seq = S.seq;
+    const items = seq.items.map((it, i) => el("div", { className: "card plan-item" + (i === S.item ? " sel" : ""), onclick: () => selectItem(i) },
+        el("div", { className: "row" },
+            el("b", { textContent: `${i + 1}. ${it.title || stem(it.input)}` }),
+            el("span", { className: "spacer" }),
+            it.match != null ? el("span", { className: "badge" + (it.match >= 0.8 ? " ok" : ""), textContent: `match ${Math.round(it.match * 100)}%` }) : "",
+        ),
+        el("div", { className: "s", textContent: `${it.input} · ${itemLength(i).toFixed(1)} s${it.keep ? ` · ${it.keep.length} range${it.keep.length === 1 ? "" : "s"}` : " · whole clip"}` }),
+        it.script ? el("div", { className: "s", textContent: `“${it.script}”` }) : "",
+    ));
+    const scriptSel = el("select", {}, el("option", { value: "", textContent: "no script (recording order)" }),
+        ...S.scripts.map(n => el("option", { value: n, textContent: n, selected: n === seq.script })));
+    return el("div", {},
+        el("p", { className: "hint", innerHTML: `<b>${seq.items.length}</b> clips, <b>${fmt(S.seqTotal ?? 0)}</b> long${seq.script ? `, planned from <b>${seq.script}</b>` : ""}. Drag clips in the strip below the player to reorder; click one to trim, zoom or caption it.` }),
+        seq.unmatched?.length ? el("div", { className: "card warn" },
+            el("h4", { textContent: `Script lines not found in any clip (${seq.unmatched.length})` }),
+            ...seq.unmatched.map(u => el("div", { className: "s", textContent: `• ${u}` })),
+            el("div", { className: "hint", textContent: "Record these, or add a clip with + Add a clip and trim it." }),
+        ) : "",
+        ...items,
+        el("div", { className: "card" },
+            el("div", { className: "row" }, el("label", { textContent: "script" }), scriptSel),
+            el("div", { className: "row" }, el("button", { textContent: "Re-plan from these clips", onclick: () => replan(scriptSel.value) })),
+            el("p", { className: "hint", textContent: "Re-planning replaces the order and trims above." }),
+        ),
+    );
+}
+
+async function replan(script) {
+    if (!confirm("Re-plan the sequence? This replaces the current order and trims.")) return;
+    const videos = [...new Set(S.seq.items.map(i => i.input))];
+    S.pendingOpen = S.current;
+    await startAssemble(S.current, videos, script);
+}
+
+async function startAssemble(name, videos, script) {
+    try {
+        $("log").textContent = "";
+        await api(`/api/run?v=${encodeURIComponent(name)}&action=assemble`, { method: "POST", body: JSON.stringify({ videos, script: script || null }) });
+        S.pendingOpen = name;
+    } catch (e) { toast(e.message); }
 }
 
 function cutsPane() {
@@ -699,7 +953,7 @@ $("pic").addEventListener("click", e => {
 function captionsPane() {
     const c = S.edit.captions || null;
     const words = S.proj.words;
-    const transcript = c?.transcript ?? (words.length ? `${stem(S.current)}.transcript.json` : null);
+    const transcript = S.seq ? "-" : c?.transcript ?? (words.length ? `${stem(S.current)}.transcript.json` : null);
     const set = (k, v) => change(e => { e.captions[k] = v; });
     const segs = S.derived.segments;
     const box = el("div", { id: "words" }, ...words.map((w, i) => {
@@ -772,13 +1026,17 @@ function outputPane() {
 }
 
 function jsonPane() {
-    const ta = el("textarea", { id: "json", spellcheck: false, value: S.edit ? JSON.stringify(S.edit, null, 2) : S.proj.editText ?? "" });
+    const ta = el("textarea", { id: "json", spellcheck: false, value: S.seq ? JSON.stringify(S.seq, null, 2) : S.edit ? JSON.stringify(S.edit, null, 2) : S.proj.editText ?? "" });
     return el("div", {},
-        el("p", { className: "hint", textContent: `${stem(S.current)}.edit.json. This is exactly what Claude Code and the CLI read.` }),
+        el("p", { className: "hint", textContent: `${S.seq ? S.current : stem(S.current) + ".edit.json"}. This is exactly what Claude Code and the CLI read.` }),
         ta,
         el("div", { className: "row" }, el("button", { className: "primary", textContent: "Apply", onclick: async () => {
             try {
                 const data = JSON.parse(ta.value);
+                if (S.seq) {
+                    await api(`/api/sequence?s=${encodeURIComponent(S.current)}`, { method: "PUT", body: ta.value });
+                    return openSequence(S.current);
+                }
                 await api(`/api/edit?v=${encodeURIComponent(S.current)}`, { method: "PUT", body: ta.value });
                 if (S.edit) S.undo.push(JSON.stringify(S.edit));
                 S.edit = data; S.savedText = null;
@@ -793,6 +1051,7 @@ function jsonPane() {
 
 async function runJob(action) {
     if (!S.current) return;
+    if (action === "plan" && S.seq) { S.tab = "plan"; renderSide(); return; }
     if (action === "plan" && S.edit && !confirm("Replace the current edit with a fresh auto plan? (Ctrl+Z won't bring it back)")) return;
     if (S.saveTimer) { clearTimeout(S.saveTimer); await save(); }
     try {
@@ -813,6 +1072,10 @@ function showJob(job) {
     }
     for (const id of ["a-analyze", "a-plan", "a-preview", "a-render"]) $(id).disabled = busy || !S.current;
     if (job?.done && job.error && job.video === S.current) setStatus(job.error, true);
+    if (job?.done && !job.error && job.action === "assemble" && S.pendingOpen === job.video) {
+        S.pendingOpen = null;
+        loadVideos().then(() => openSequence(job.video));
+    }
 }
 
 // ---------- loading & live sync ----------
@@ -823,8 +1086,22 @@ async function loadVideos() {
     const data = await api("/api/videos");
     $("dir").textContent = data.dir;
     S.videos = data.videos;
+    S.sequences = data.sequences;
+    S.scripts = data.scripts;
     const list = $("videos");
-    list.replaceChildren(...S.videos.map(v => el("div", {
+    list.replaceChildren(
+        el("div", { className: "side-h", textContent: "Merged videos" }),
+        ...S.sequences.map(q => {
+            const item = el("div", { className: "item" + (q.name === S.current ? " sel" : ""), onclick: () => openSequence(q.name) },
+                q.name.replace(/\.sequence\.json$/, ""),
+                el("div", { className: "badges" }, el("span", { className: "badge", textContent: "sequence" }), el("span", { className: "badge" + (q.edited ? " ok" : ""), textContent: "rendered" })));
+            item.dataset.name = q.name;
+            return item;
+        }),
+        el("button", { textContent: "+ Merge videos…", onclick: openMerge, disabled: !S.videos.length }),
+        el("div", { className: "side-h", textContent: "Videos" }),
+    );
+    list.append(...S.videos.map(v => el("div", {
         className: "item" + (v.name === S.current ? " sel" : ""),
         onclick: () => open(v.name),
     }, v.name, el("div", { className: "badges" },
@@ -832,13 +1109,15 @@ async function loadVideos() {
         el("span", { className: "badge" + (v.edit ? " ok" : ""), textContent: "edit" }),
         el("span", { className: "badge" + (v.edited ? " ok" : ""), textContent: "rendered" }),
     ))));
+    for (const [i, v] of S.videos.entries()) list.querySelectorAll(".item")[S.sequences.length + i].dataset.name = v.name;
     if (!S.videos.length) list.append(el("p", { className: "hint", textContent: "No videos in this folder." }));
     showJob(data.job);
 }
 
 async function open(name, { keepPlace = false } = {}) {
     const proj = await api(`/api/project?v=${encodeURIComponent(name)}`);
-    const switching = name !== S.current;
+    const switching = name !== S.current || !!S.seq;
+    S.seq = null; S.seqData = null;
     S.current = name;
     S.proj = proj;
     if (switching) {
@@ -853,16 +1132,63 @@ async function open(name, { keepPlace = false } = {}) {
     if (proj.editError) setStatus(`Edit file error: ${proj.editError}`, true);
     else setStatus(proj.edit ? `Editing ${stem(name)}.edit.json` : "No edit yet");
     derive(); renderSide(); drawTimeline();
-    for (const b of document.querySelectorAll("#videos .item")) b.classList.toggle("sel", b.firstChild.textContent === name);
+    markSelected();
     showJob(S.job);
     if (S.mode !== "live" && !proj.outputs[S.mode]) setMode("live");
     else if (S.mode !== "live" && !keepPlace) setMode(S.mode);
+}
+
+function markSelected() {
+    for (const b of document.querySelectorAll("#videos .item")) b.classList.toggle("sel", b.dataset.name === S.current);
+}
+
+async function openSequence(name, { keepPlace = false } = {}) {
+    const data = await api(`/api/sequence?s=${encodeURIComponent(name)}`);
+    const switching = name !== S.current || !S.seq;
+    S.current = name;
+    S.seqData = data;
+    S.scripts = data.scripts;
+    S.savedText = data.text;
+    $("empty").hidden = true; $("frame").hidden = false;
+    if (!data.seq) {
+        S.seq = null; S.proj = null; S.edit = null;
+        S.tab = "cuts";
+        setStatus(`Sequence error: ${data.error}`, true);
+        $("board").hidden = true;
+        markSelected();
+        return;
+    }
+    S.seq = data.seq;
+    if (switching) {
+        S.undo = []; S.redo = []; S.item = 0; S.tab = "plan";
+        history.replaceState(null, "", `#seq=${encodeURIComponent(name)}`);
+        setMode("live");
+    }
+    S.item = Math.min(S.item, S.seq.items.length - 1);
+    selectItem(S.item, { keepTime: keepPlace });
+    setStatus(`Editing ${name}`);
+    markSelected();
+    showJob(S.job);
 }
 
 /** Reloads when something else (Claude Code, the CLI, an editor) changes the files. */
 async function onFiles(names) {
     await loadVideos();
     if (!S.current) return;
+    if (S.seqData) {
+        const stems = [S.seqData.outStem, ...(S.seq?.items ?? []).map(i => stem(i.input.split("/").pop()))];
+        if (!names.some(n => n === S.current || stems.some(s => n.startsWith(s + ".")))) return;
+        const data = await api(`/api/sequence?s=${encodeURIComponent(S.current)}`).catch(() => null);
+        if (!data) return;
+        const ownSave = data.text === S.savedText;
+        const outputsChanged = JSON.stringify(data.outputs) !== JSON.stringify(S.seqData.outputs);
+        if (ownSave && !outputsChanged && JSON.stringify(data.items) === JSON.stringify(S.seqData.items)) return;
+        if (!ownSave && S.seq) pushUndo(snap());
+        await openSequence(S.current, { keepPlace: true });
+        if (!ownSave) toast("Sequence updated from disk");
+        if (outputsChanged && S.mode !== "live") setMode(S.mode);
+        return;
+    }
     const s = stem(S.current);
     if (!names.some(n => n === S.current || n.startsWith(s + "."))) return;
     const before = S.proj;
@@ -897,6 +1223,26 @@ function connect() {
 
 // ---------- wiring ----------
 
+function openMerge() {
+    const list = $("m-videos");
+    list.replaceChildren(...S.videos.map(v => el("label", {}, el("input", { type: "checkbox", value: v.name, checked: true }), " ", v.name)));
+    $("m-script").replaceChildren(el("option", { value: "", textContent: "none: use recording order" }), ...S.scripts.map(n => el("option", { value: n, textContent: n })));
+    if (S.scripts.length) $("m-script").value = S.scripts[0];
+    $("m-name").value = S.scripts.length ? stem(S.scripts[0]) : "merged";
+    $("merge").showModal();
+}
+$("m-script").onchange = () => { if ($("m-script").value) $("m-name").value = stem($("m-script").value); };
+$("m-cancel").onclick = () => $("merge").close();
+$("m-go").onclick = async () => {
+    const videos = [...$("m-videos").querySelectorAll("input:checked")].map(i => i.value);
+    if (!videos.length) return toast("Pick at least one clip");
+    const name = ($("m-name").value.trim() || "merged").replace(/\.sequence\.json$/, "") + ".sequence.json";
+    if (S.sequences.some(q => q.name === name) && !confirm(`${name} exists. Replace it?`)) return;
+    $("merge").close();
+    await startAssemble(name, videos, $("m-script").value);
+    toast("Planning… this transcribes clips that haven't been analyzed yet");
+};
+
 $("play").onclick = togglePlay;
 for (const b of $("modes").children) b.onclick = () => setMode(b.dataset.mode);
 for (const b of $("tabs").children) b.onclick = () => { S.tab = b.dataset.tab; renderSide(); };
@@ -929,8 +1275,11 @@ addEventListener("keydown", e => {
 await loadVideos();
 connect();
 const fromHash = decodeURIComponent(location.hash.slice(1));
-const first = S.videos.find(v => v.name === fromHash) ?? S.videos[0];
-if (first) await open(first.name);
+if (fromHash.startsWith("seq=") && S.sequences.some(q => q.name === fromHash.slice(4))) await openSequence(fromHash.slice(4));
+else {
+    const first = S.videos.find(v => v.name === fromHash) ?? S.videos[0];
+    if (first) await open(first.name);
+}
 requestAnimationFrame(tick);
 </script>
 </body>

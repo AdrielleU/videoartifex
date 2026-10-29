@@ -3,7 +3,7 @@ import { keepFromSilences, type CutOptions } from "./analyze/silence.ts";
 import type { MediaInfo } from "./ffmpeg.ts";
 import type { EditSpec, Range, Zoom } from "./spec.ts";
 
-/** Output of `vidartifax analyze`, saved next to the video. */
+/** Output of `videoartifex analyze`, saved next to the video. */
 export interface Analysis {
     version: 1;
     input: string;

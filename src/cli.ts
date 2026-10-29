@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { analyze, sidecar } from "./analyze/index.ts";
 import { checkFfmpeg, ffmpegMajor } from "./ffmpeg.ts";
@@ -9,18 +9,25 @@ import { snapshot } from "./frames.ts";
 import { plan, type Analysis, type PlanOptions } from "./plan.ts";
 import { loadSpec, render, type RenderResult } from "./render.ts";
 import { DEFAULT_PORT, startUi } from "./ui/server.ts";
+import { assemble } from "./assemble.ts";
+import { loadSequence, renderSequence } from "./sequence.ts";
+import { isSequence, type SequenceSpec } from "./spec.ts";
 
-const HELP = `VidArtifax: edit videos with native ffmpeg, made for Claude Code
+const HELP = `VideoArtifex: edit videos with native ffmpeg, made for Claude Code
 
 Usage:
-  vidartifax auto <video> [--preview]       analyze + plan + render in one go
-  vidartifax analyze <video>                silences, on-screen activity, transcript
-  vidartifax plan <video>                   write <name>.edit.json from the analysis
-  vidartifax render <edit.json> [--preview] render the edit to MP4
-  vidartifax frames <video> --at 3,7.5      PNG snapshots (--grid to read focus points, --width px)
-  vidartifax validate <edit.json>           check an edit file
-  vidartifax ui [folder]                    web editor at http://localhost:17211 (--port, --host)
-  vidartifax doctor                         check ffmpeg and transcription setup
+  videoartifex auto <video> [--preview]       analyze + plan + render in one go
+  videoartifex analyze <video>                silences, on-screen activity, transcript
+  videoartifex plan <video>                   write <name>.edit.json from the analysis
+  videoartifex render <edit.json> [--preview] render the edit to MP4
+  videoartifex assemble <videos|folder...> [--script script.md]
+                                            plan one video stitched from many clips
+                                            (writes <name>.sequence.json; render it)
+  videoartifex merge ...                      same as assemble
+  videoartifex frames <video> --at 3,7.5      PNG snapshots (--grid to read focus points, --width px)
+  videoartifex validate <edit.json>           check an edit file
+  videoartifex ui [folder]                    web editor at http://localhost:17211 (--port, --host)
+  videoartifex doctor                         check ffmpeg and transcription setup
 
 Analyze options:
   --transcript <file>   use an existing transcript (JSON, SRT, VTT)
@@ -35,11 +42,16 @@ Plan options:
   --pad <s>             silence kept around each cut, default 0.15
   --max-zoom <x>        largest auto-zoom, default 2.2
 
+Assemble / merge options:
+  --script <file>       order and trim clips to follow a script (Markdown or text)
+  --name <name>         sequence name, default "sequence" (or the script's name)
+  --min-match <0..1>    how closely a take must match a script line, default 0.5
+
 Render options:
   --preview             fast 540p draft (<name>.preview.mp4)
   -o, --output <file>   output path
 
-Edit file format: https://github.com/AdrielleU/vidartifax/blob/main/skills/vidartifax/edit-format.md
+Edit file format: https://github.com/AdrielleU/videoartifex/blob/main/skills/videoartifex/edit-format.md
 `;
 
 const opts = {
@@ -63,6 +75,9 @@ const opts = {
     width: { type: "string" },
     json: { type: "boolean" },
     port: { type: "string" },
+    script: { type: "string" },
+    name: { type: "string" },
+    "min-match": { type: "string" },
     host: { type: "string" },
 } as const;
 
@@ -78,7 +93,7 @@ function num(v: string | undefined, name: string): number | undefined {
 }
 
 function need(arg: string | undefined, what: string): string {
-    if (!arg) throw new Error(`missing ${what}. Run vidartifax --help.`);
+    if (!arg) throw new Error(`missing ${what}. Run videoartifex --help.`);
     if (!existsSync(arg)) throw new Error(`${arg} not found`);
     return arg;
 }
@@ -131,6 +146,33 @@ function report(r: RenderResult) {
     log(`  ${r.sourceDuration.toFixed(1)} s -> ${r.duration.toFixed(1)} s (cut ${r.removed.toFixed(1)} s), ${r.zooms} zooms, ${r.captions} captions, took ${r.seconds.toFixed(1)} s`);
 }
 
+const VIDEO_EXT = new Set([".mp4", ".mov", ".mkv", ".webm", ".m4v"]);
+
+/** A folder expands to the source videos in it (not our own renders). */
+function videoFiles(path: string): string[] {
+    if (!statSync(path).isDirectory()) return [path];
+    return readdirSync(path)
+        .filter(n => VIDEO_EXT.has(extname(n).toLowerCase()) && !/\.(edited|preview)\.mp4$/.test(n) && !n.startsWith("."))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        .map(n => join(path, n));
+}
+
+function describeSequence(seq: SequenceSpec) {
+    let total = 0;
+    seq.items.forEach((item, i) => {
+        const len = item.keep ? item.keep.reduce((n, r) => n + r.end - r.start, 0) : NaN;
+        if (Number.isFinite(len)) total += len;
+        const span = item.keep?.length ? `${item.keep[0]!.start.toFixed(1)}-${item.keep[item.keep.length - 1]!.end.toFixed(1)} s` : "whole clip";
+        const match = item.match !== undefined ? `, match ${Math.round(item.match * 100)}%` : "";
+        log(`  ${String(i + 1).padStart(2)}. ${(item.title ?? "").padEnd(18).slice(0, 18)} ${basename(item.input)}  ${span}${Number.isFinite(len) ? ` (${len.toFixed(1)} s)` : ""}${match}`);
+    });
+    log(`plan: ${seq.items.length} clips${total ? `, about ${total.toFixed(0)} s` : ""}`);
+    if (seq.unmatched?.length) {
+        log(`not found in any clip (${seq.unmatched.length}):`);
+        for (const u of seq.unmatched) log(`  - ${u}`);
+    }
+}
+
 async function main() {
     const { values: v, positionals } = parseArgs({ options: opts, allowPositionals: true, strict: true });
     const [cmd, arg] = positionals;
@@ -155,8 +197,44 @@ async function main() {
             doPlan(analysisFile, analysis, v, v.output);
             break;
         }
+        case "assemble":
+        case "merge": {
+            const videos = positionals.slice(1).flatMap(p => videoFiles(need(p, "videos or a folder")));
+            if (!videos.length) throw new Error("no videos given. Usage: videoartifex assemble clip1.mp4 clip2.mp4 [--script script.md]");
+            if (v.script) need(v.script, "script");
+            const name = v.name ?? (v.script ? basename(v.script, extname(v.script)) : "sequence");
+            const out = v.output ?? join(dirname(videos[0]!), `${name}.sequence.json`);
+            const { sequence } = await assemble({
+                ...planOptions(v),
+                videos,
+                script: v.script,
+                out,
+                minMatch: num(v["min-match"], "min-match"),
+                noTranscript: v["no-transcript"] || (!v.script && v["no-captions"]),
+                transcript: undefined,
+                force: v.force,
+                model: v.model,
+                language: v.language,
+                noiseDb: num(v.noise, "noise"),
+                log,
+            });
+            writeFileSync(out, JSON.stringify(sequence, null, 2) + "\n");
+            describeSequence(sequence);
+            log(`wrote ${out}`);
+            log(`review it (videoartifex ui shows it), then: videoartifex render "${out}" --preview`);
+            break;
+        }
         case "render": {
-            const r = await render(need(arg, "edit file"), { preview: v.preview, output: v.output, onProgress: progress() });
+            const file = need(arg, "edit or sequence file");
+            if (isSequence(JSON.parse(readFileSync(file, "utf8")))) {
+                const r = await renderSequence(file, { preview: v.preview, output: v.output, onProgress: progress() });
+                if (process.stderr.isTTY) process.stderr.write("\r");
+                log(`rendered ${r.output}`);
+                log(`  ${r.items} clips, ${r.duration.toFixed(1)} s, took ${r.seconds.toFixed(1)} s`);
+                if (v.json) process.stdout.write(JSON.stringify(r) + "\n");
+                break;
+            }
+            const r = await render(file, { preview: v.preview, output: v.output, onProgress: progress() });
             report(r);
             if (v.json) process.stdout.write(JSON.stringify(r) + "\n");
             break;
@@ -177,7 +255,13 @@ async function main() {
             break;
         }
         case "validate": {
-            const spec = loadSpec(need(arg, "edit file"));
+            const file = need(arg, "edit or sequence file");
+            if (isSequence(JSON.parse(readFileSync(file, "utf8")))) {
+                const seq = loadSequence(file);
+                log(`${basename(file)} is valid: ${seq.items.length} clips`);
+                break;
+            }
+            const spec = loadSpec(file);
             log(`${basename(arg!)} is valid: ${spec.keep?.length ?? "all"} kept ranges, ${spec.zooms?.length ?? 0} zooms, captions ${spec.captions ? "on" : "off"}`);
             break;
         }
@@ -189,7 +273,7 @@ async function main() {
             const { url } = await startUi({ dir, port, host: v.host, log }).catch((e: NodeJS.ErrnoException) => {
                 throw e.code === "EADDRINUSE" ? new Error(`port ${port} is in use; pick another with --port`) : e;
             });
-            log(`VidArtifax UI for ${resolve(dir)}`);
+            log(`VideoArtifex UI for ${resolve(dir)}`);
             log(`open ${url}  (Ctrl+C to stop)`);
             break;
         }
@@ -206,7 +290,7 @@ async function main() {
             break;
         }
         default:
-            throw new Error(`unknown command "${cmd}". Run vidartifax --help.`);
+            throw new Error(`unknown command "${cmd}". Run videoartifex --help.`);
     }
 }
 

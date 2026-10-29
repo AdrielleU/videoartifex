@@ -1,12 +1,14 @@
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyze, sidecar } from "../analyze/index.ts";
-import { probe } from "../ffmpeg.ts";
+import { assemble } from "../assemble.ts";
+import { probe, runRaw } from "../ffmpeg.ts";
+import { renderSequence, sequenceStem } from "../sequence.ts";
 import { plan, type Analysis, type PlanOptions } from "../plan.ts";
 import { render } from "../render.ts";
-import { validateSpec } from "../spec.ts";
+import { validateSequence, validateSpec, type SequenceSpec } from "../spec.ts";
 import { loadTranscript } from "../analyze/transcribe.ts";
 
 export const DEFAULT_PORT = 17211;
@@ -31,6 +33,8 @@ const LIB_EXT = extname(fileURLToPath(import.meta.url));
 const PAGE_FILE = join(dirname(fileURLToPath(import.meta.url)), "page.html");
 
 const isOutput = (name: string) => /\.(edited|preview)\.mp4$/.test(name);
+const isSequenceFile = (name: string) => name.endsWith(".sequence.json");
+const SCRIPT = new Set([".md", ".txt"]);
 const stem = (name: string) => basename(name, extname(name));
 
 interface Job {
@@ -76,8 +80,10 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
 
     /** Resolves a bare file name inside the folder; rejects anything else. */
     const file = (name: string | null): string => {
-        if (!name || name !== basename(name) || name.startsWith(".")) throw new HttpError(400, "bad file name");
-        const p = join(dir, name);
+        if (!name) throw new HttpError(400, "bad file name");
+        const p = resolve(dir, name);
+        // Sequences may point into subfolders, but never outside this folder or at hidden files.
+        if (!p.startsWith(dir + sep) || relative(dir, p).split(sep).some(part => part.startsWith("."))) throw new HttpError(400, "bad file name");
         if (!existsSync(p)) throw new HttpError(404, `${name} not found`);
         return p;
     };
@@ -99,6 +105,98 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
                     preview: has("preview.mp4"),
                 };
             });
+    }
+
+    function listSequences() {
+        return readdirSync(dir).filter(n => isSequenceFile(n) && !n.startsWith(".")).sort().map(name => ({
+            name,
+            edited: existsSync(join(dir, `${sequenceStem(name)}.edited.mp4`)),
+        }));
+    }
+
+    const listScripts = () => readdirSync(dir).filter(n => SCRIPT.has(extname(n).toLowerCase()) && !n.startsWith(".")).sort();
+
+    const outputs = (outStem: string) => {
+        const mtime = (kind: string) => {
+            const p = join(dir, `${outStem}.${kind}.mp4`);
+            return existsSync(p) ? statSync(p).mtimeMs : null;
+        };
+        return { edited: mtime("edited"), preview: mtime("preview") };
+    };
+
+    /** What the page needs to preview one clip: probe, analysis and transcript. */
+    function clipInfo(video: string) {
+        const analysis = readJson(sidecar(video, "analysis.json")) as Analysis | undefined;
+        const transcript = analysis?.transcript ? join(dirname(video), analysis.transcript) : sidecar(video, "transcript.json");
+        let words: unknown[] = [];
+        if (existsSync(transcript)) {
+            try {
+                words = loadTranscript(transcript).words;
+            } catch { /* shown as no captions */ }
+        }
+        return {
+            media: analysis?.media ?? probe(video),
+            silences: analysis?.silences ?? [],
+            activity: analysis?.activity ?? [],
+            analyzed: !!analysis,
+            words,
+        };
+    }
+
+    function sequence(name: string) {
+        const p = file(name);
+        const text = readFileSync(p, "utf8");
+        let seq: SequenceSpec | null = null;
+        let error: string | null = null;
+        try {
+            seq = validateSequence(JSON.parse(text));
+        } catch (e) {
+            error = (e as Error).message;
+        }
+        // Sequence paths are relative to the sequence file, which sits in the folder.
+        const items = (seq?.items ?? []).map(item => {
+            try {
+                return { ...clipInfo(file(item.input)), error: null };
+            } catch (e) {
+                return { error: (e as Error).message };
+            }
+        });
+        let script: string | null = null;
+        if (seq?.script) {
+            try {
+                script = readFileSync(file(seq.script), "utf8");
+            } catch { /* missing script is fine */ }
+        }
+        const outStem = sequenceStem(name);
+        return { name, seq, text, error, items, script, outStem, outputs: outputs(outStem), scripts: listScripts() };
+    }
+
+    function saveSequence(name: string, body: string) {
+        if (!isSequenceFile(name) || name !== basename(name)) throw new HttpError(400, "sequence files are named <name>.sequence.json");
+        let data: unknown;
+        try {
+            data = JSON.parse(body);
+            validateSequence(data);
+        } catch (e) {
+            throw new HttpError(400, (e as Error).message);
+        }
+        writeFileSync(join(dir, name), JSON.stringify(data, null, 2) + "\n");
+    }
+
+    const thumbs = new Map<string, Buffer>();
+    async function thumb(res: ServerResponse, name: string, t: number) {
+        const p = file(name);
+        const key = `${p}@${t.toFixed(2)}@${statSync(p).mtimeMs}`;
+        let img = thumbs.get(key);
+        if (!img) {
+            const chunks: Buffer[] = [];
+            await runRaw(["-ss", String(Math.max(0, t)), "-i", p, "-frames:v", "1", "-vf", "scale=320:-2", "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "5", "pipe:1"], c => chunks.push(c));
+            img = Buffer.concat(chunks);
+            if (thumbs.size > 500) thumbs.clear();
+            thumbs.set(key, img);
+        }
+        res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "max-age=3600" });
+        res.end(img);
     }
 
     function project(name: string) {
@@ -128,10 +226,6 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
                 words = loadTranscript(join(dir, transcriptRef)).words;
             } catch { /* shown as no captions */ }
         }
-        const mtime = (suffix: string) => {
-            const p = join(dir, `${s}.${suffix}`);
-            return existsSync(p) ? statSync(p).mtimeMs : null;
-        };
         return {
             name,
             media,
@@ -142,7 +236,8 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
             editText: editText ?? null,
             editError: editError ?? null,
             words,
-            outputs: { edited: mtime("edited.mp4"), preview: mtime("preview.mp4") },
+            outStem: s,
+            outputs: outputs(s),
         };
     }
 
@@ -162,9 +257,24 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
         writeFileSync(sidecar(video, "edit.json"), JSON.stringify(data, null, 2) + "\n");
     }
 
-    function startJob(name: string, action: string, planOpts: PlanOptions) {
+    interface JobBody extends PlanOptions {
+        videos?: string[];
+        script?: string | null;
+        name?: string;
+    }
+
+    function startJob(name: string, action: string, planOpts: JobBody) {
         if (job && !job.done) throw new HttpError(409, `busy: ${job.action} ${job.video}`);
-        const video = file(name);
+        if (action === "assemble") {
+            if (!isSequenceFile(name) || name !== basename(name)) throw new HttpError(400, "name must end in .sequence.json");
+            if (!planOpts.videos?.length) throw new HttpError(400, "pick at least one video");
+            planOpts.videos.forEach(file);
+            if (planOpts.script) file(planOpts.script);
+        } else if (isSequenceFile(name)) {
+            file(name);
+            if (action !== "preview" && action !== "render") throw new HttpError(400, `can't ${action} a sequence`);
+        }
+        const video = action === "assemble" ? join(dir, name) : file(name);
         const j: Job = { video: name, action, progress: 0, log: [], done: false };
         job = j;
         const say = (msg: string) => {
@@ -190,6 +300,23 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
 
         (async () => {
             say(`${action} started`);
+            if (action === "assemble") {
+                const { sequence: seq } = await assemble({
+                    ...planOpts,
+                    videos: planOpts.videos!.map(v => join(dir, v)),
+                    script: planOpts.script ? join(dir, planOpts.script) : undefined,
+                    out: video,
+                    log: say,
+                });
+                writeFileSync(video, JSON.stringify(seq, null, 2) + "\n");
+                say(`planned ${seq.items.length} clips${seq.unmatched?.length ? `, ${seq.unmatched.length} script lines not found` : ""}`);
+                return;
+            }
+            if (isSequenceFile(name)) {
+                const r = await renderSequence(video, { preview: action === "preview", onProgress });
+                say(`rendered ${basename(r.output)}: ${r.items} clips, ${r.duration.toFixed(1)} s in ${r.seconds.toFixed(1)} s`);
+                return;
+            }
             switch (action) {
                 case "analyze":
                     await analyze(video, { log: say, noTranscript: planOpts.captions === false });
@@ -274,14 +401,21 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
         } else if (req.method === "GET" && path.startsWith("/lib/")) {
             await lib(res, basename(path, LIB_EXT));
         } else if (req.method === "GET" && path === "/api/videos") {
-            json({ dir, videos: listVideos(), job });
+            json({ dir, videos: listVideos(), sequences: listSequences(), scripts: listScripts(), job });
         } else if (req.method === "GET" && path === "/api/project") {
             json(project(v ?? ""));
+        } else if (req.method === "GET" && path === "/api/sequence") {
+            json(sequence(url.searchParams.get("s") ?? ""));
+        } else if (req.method === "PUT" && path === "/api/sequence") {
+            saveSequence(url.searchParams.get("s") ?? "", await body(req));
+            json({ ok: true });
+        } else if (req.method === "GET" && path === "/api/thumb") {
+            await thumb(res, url.searchParams.get("f") ?? "", Number(url.searchParams.get("t") ?? 0) || 0);
         } else if (req.method === "PUT" && path === "/api/edit") {
             saveEdit(v ?? "", await body(req));
             json({ ok: true });
         } else if (req.method === "POST" && path === "/api/run") {
-            const o = JSON.parse((await body(req)) || "{}") as PlanOptions;
+            const o = JSON.parse((await body(req)) || "{}") as JobBody;
             startJob(v ?? "", url.searchParams.get("action") ?? "", o);
             json({ ok: true });
         } else if (req.method === "GET" && path === "/api/events") {

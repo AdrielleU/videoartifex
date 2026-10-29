@@ -15,6 +15,12 @@ export interface RenderOptions {
     preview?: boolean;
     output?: string;
     onProgress?: (fraction: number) => void;
+    /**
+     * Render a piece of a sequence: stereo PCM audio in Matroska (silence if
+     * the source has none), so pieces join without gaps and the audio is
+     * encoded once at the end.
+     */
+    intermediate?: boolean;
 }
 
 export interface RenderResult {
@@ -87,7 +93,7 @@ export async function render(specFile: string, opts: RenderOptions = {}): Promis
     const vh = even(media.height * fit);
 
     const zooms = zoomsToOutput(spec.zooms ?? [], segments);
-    const tmp = mkdtempSync(join(tmpdir(), "vidartifax-"));
+    const tmp = mkdtempSync(join(tmpdir(), "videoartifex-"));
     try {
         let captionCount = 0;
         let assFile: string | null = null;
@@ -103,7 +109,9 @@ export async function render(specFile: string, opts: RenderOptions = {}): Promis
             writeFileSync(join(tmp, assFile), buildAss(cues, spec.captions, width, height));
         }
 
-        const graph = buildGraph({ segments, fps, vw, vh, width, height, zoom: zoomFilter(zooms, fps), assFile, hasAudio: media.hasAudio });
+        const intermediate = !!opts.intermediate;
+        const graph = buildGraph({ segments, fps, vw, vh, width, height, zoom: zoomFilter(zooms, fps), assFile, hasAudio: media.hasAudio, stereo: intermediate });
+        const audio = media.hasAudio || intermediate;
         const graphFile = join(tmp, "graph.txt");
         writeFileSync(graphFile, graph);
         const graphArgs = ffmpegMajor(version) >= 7 || ffmpegMajor(version) === 0
@@ -114,13 +122,13 @@ export async function render(specFile: string, opts: RenderOptions = {}): Promis
             "-y", "-i", input,
             ...graphArgs,
             "-map", "[v]",
-            ...(media.hasAudio ? ["-map", "[a]", "-c:a", "aac", "-b:a", "160k"] : []),
+            ...(audio ? ["-map", "[a]", ...(intermediate ? ["-c:a", "pcm_s16le"] : ["-c:a", "aac", "-b:a", "160k"])] : []),
             "-c:v", "libx264",
             "-preset", preview ? "ultrafast" : "veryfast",
             "-crf", String(preview ? 28 : spec.output?.crf ?? 20),
             "-pix_fmt", "yuv420p",
             "-r", String(fps),
-            "-movflags", "+faststart",
+            ...(intermediate ? [] : ["-movflags", "+faststart"]),
             output,
         ];
         // Subtitles are referenced relative to the temp dir, which avoids
@@ -153,6 +161,8 @@ export interface GraphInput {
     zoom: string | null;
     assFile: string | null;
     hasAudio: boolean;
+    /** Force 48 kHz stereo audio, with silence when the source has none. */
+    stereo?: boolean;
 }
 
 /**
@@ -184,7 +194,10 @@ export function buildGraph(g: GraphInput): string {
             `aselect='${sel}'`,
             "asetpts=N/SR/TB",
         ];
+        if (g.stereo) audio.push(`aformat=sample_fmts=s16:sample_rates=${AUDIO_RATE}:channel_layouts=stereo`);
         chains.push(`[0:a]${audio.join(",")}[a]`);
+    } else if (g.stereo) {
+        chains.push(`anullsrc=r=${AUDIO_RATE}:cl=stereo,atrim=duration=${outputDuration(g.segments).toFixed(4)},aformat=sample_fmts=s16[a]`);
     }
     return chains.join(";\n");
 }

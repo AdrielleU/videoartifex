@@ -1,7 +1,7 @@
 # Edit file format (`*.edit.json`)
 
 An edit file describes how to cut, zoom and caption one source video.
-`vidartifax plan` writes a first draft; you (or Claude) adjust it; `vidartifax
+`videoartifex plan` writes a first draft; you (or Claude) adjust it; `videoartifex
 render` turns it into an MP4.
 
 **All times are seconds in the source video.** Change the cuts and the
@@ -81,7 +81,7 @@ middle falls in a cut section are dropped.
 | `fps` | source, rounded | One of 24, 25, 30, 50, 60. |
 | `crf` | `20` | x264 quality. Lower is better and bigger; 18–24 is sensible. |
 
-`vidartifax render --preview` ignores `path`, renders at 540p and writes
+`videoartifex render --preview` ignores `path`, renders at 540p and writes
 `<input>.preview.mp4`.
 
 ## Transcript format (`*.transcript.json`)
@@ -96,12 +96,12 @@ middle falls in a cut section are dropped.
 }
 ```
 
-Times are source seconds. `vidartifax analyze` writes this with whisper. You can
+Times are source seconds. `videoartifex analyze` writes this with whisper. You can
 also edit it to fix misheard words before rendering.
 
 ## Analysis file (`*.analysis.json`)
 
-Written by `vidartifax analyze`, read by `vidartifax plan`. Useful when editing
+Written by `videoartifex analyze`, read by `videoartifex plan`. Useful when editing
 by hand:
 
 - `media`: duration, size, fps, whether there is audio.
@@ -111,3 +111,50 @@ by hand:
   menus opening and dialogs appearing show up here; scrolling and full-screen
   changes don't.
 - `transcript`: path to the transcript, if any.
+
+## Sequence file (`*.sequence.json`)
+
+A sequence stitches several clips into one video. `videoartifex assemble` (or
+its alias `merge`) writes one; `videoartifex render` renders it like an edit
+file.
+
+```json
+{
+  "version": 1,
+  "kind": "sequence",
+  "script": "script.md",
+  "captions": { "position": "bottom" },
+  "output": { "width": 1920, "height": 1080 },
+  "items": [
+    { "input": "intro.mp4", "title": "Intro", "keep": [{ "start": 1.1, "end": 5.5 }] },
+    { "input": "takes.mp4", "title": "Install", "keep": [{ "start": 9.6, "end": 12.9 }],
+      "zooms": [{ "start": 10, "end": 12, "x": 0.3, "y": 0.4, "scale": 1.8 }],
+      "script": "To install it, open a terminal and run npm install.", "match": 0.96 }
+  ],
+  "unmatched": ["Wrap up: Don't forget to subscribe."]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `kind` | Always `"sequence"`. |
+| `items` | Clips in playing order. The same video can appear more than once with different `keep` ranges. |
+| `items[].input` | Source video, relative to the sequence file. |
+| `items[].keep`, `items[].zooms` | Same as in an edit file, in that clip's source seconds. Omit `keep` to use the whole clip. |
+| `items[].title`, `items[].script`, `items[].match` | Labels from the planner: script section, the lines this item covers, and how closely the take matched (0..1). Informational. |
+| `captions` | Caption style (edit-file `captions` without `transcript`) for every item, or `false`. Each item uses `<input>.transcript.json` if it exists. |
+| `output` | As in an edit file, for the whole video. Defaults to the first clip's size. |
+| `script` | The script the plan came from. Informational. |
+| `unmatched` | Script lines no clip covered. Informational; the renderer ignores it. |
+
+Output goes to `<name>.edited.mp4` (`<name>.preview.mp4` with `--preview`)
+next to the sequence file.
+
+### How the planner reads a script
+
+Markdown or plain text. `#` headings become section titles; each sentence is
+one line to find. Text in `[square brackets]` is a direction, not speech, and
+is ignored. Each line is matched against every clip's transcript, word by
+word, tolerating filler and misheard words; when a line was recorded more
+than once, the later take wins. Consecutive lines from the same take become
+one item, and long pauses inside them are cut.

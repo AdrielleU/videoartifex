@@ -1,10 +1,10 @@
 {
-  "name": "vidartifax",
+  "name": "videoartifex",
   "version": "0.1.0",
   "description": "Edit videos from Claude Code with native ffmpeg: cut silences, auto-zoom on screen activity, word-highlighted captions.",
   "author": { "name": "AdrielleU" },
-  "homepage": "https://github.com/AdrielleU/vidartifax",
-  "repository": "https://github.com/AdrielleU/vidartifax",
+  "homepage": "https://github.com/AdrielleU/videoartifex",
+  "repository": "https://github.com/AdrielleU/videoartifex",
   "license": "MIT",
   "keywords": ["video", "ffmpeg", "captions", "editing"]
 }

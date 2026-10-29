@@ -40,7 +40,7 @@ export async function transcribe(video: string, outFile: string, opts: Transcrib
         );
     }
 
-    const dir = mkdtempSync(join(tmpdir(), "vidartifax-"));
+    const dir = mkdtempSync(join(tmpdir(), "videoartifex-"));
     try {
         const wav = join(dir, "audio.wav");
         await run(["-y", "-i", video, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav]);

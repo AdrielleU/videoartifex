@@ -154,3 +154,67 @@ export function validateTranscript(data: unknown): Transcript {
     });
     return data as unknown as Transcript;
 }
+
+/**
+ * A sequence file (`*.sequence.json`) stitches several source videos into
+ * one, in order. Each item is cut and zoomed like an edit file; captions and
+ * output settings apply to the whole video.
+ */
+export interface SequenceSpec {
+    version: 1;
+    kind: "sequence";
+    /** The script the order was planned from, relative to this file. Informational. */
+    script?: string;
+    output?: OutputSpec;
+    /** Caption style for every item. Each item uses `<input>.transcript.json` when present. */
+    captions?: Omit<CaptionsSpec, "transcript"> | false;
+    items: SequenceItem[];
+    /** Script lines no clip covered, left by the planner for review. */
+    unmatched?: string[];
+}
+
+export interface SequenceItem {
+    /** Source video, relative to the sequence file. */
+    input: string;
+    /** Source ranges to keep, ascending. Omit to keep the whole clip. */
+    keep?: Range[];
+    zooms?: Zoom[];
+    /** Label shown in the UI, e.g. the script section. */
+    title?: string;
+    /** Script text this item covers. */
+    script?: string;
+    /** How well the transcript matched the script, 0..1. */
+    match?: number;
+}
+
+export function isSequence(data: unknown): boolean {
+    return isObj(data) && data.kind === "sequence";
+}
+
+/** Validates a sequence file, reusing the edit-file rules for each item. */
+export function validateSequence(data: unknown): SequenceSpec {
+    if (!isObj(data)) throw new SpecError("sequence file must be a JSON object");
+    if (data.version !== 1) throw new SpecError(`"version" must be 1`);
+    if (data.kind !== "sequence") throw new SpecError(`"kind" must be "sequence"`);
+    if (!Array.isArray(data.items) || data.items.length === 0) throw new SpecError(`"items" must be a non-empty array`);
+    if (data.script !== undefined && typeof data.script !== "string") throw new SpecError(`"script" must be a path`);
+    if (data.unmatched !== undefined && !(Array.isArray(data.unmatched) && data.unmatched.every(s => typeof s === "string"))) {
+        throw new SpecError(`"unmatched" must be an array of strings`);
+    }
+    const captions = data.captions === undefined || data.captions === false ? data.captions : { ...(data.captions as object), transcript: "-" };
+    // Output and captions are checked through the edit-file rules.
+    validateSpec({ version: 1, input: "-", output: data.output, captions });
+    data.items.forEach((item, i) => {
+        if (!isObj(item)) throw new SpecError(`items[${i}] must be an object`);
+        for (const k of ["title", "script"] as const) {
+            if (item[k] !== undefined && typeof item[k] !== "string") throw new SpecError(`items[${i}].${k} must be a string`);
+        }
+        if (item.match !== undefined && !(isNum(item.match) && item.match >= 0 && item.match <= 1)) throw new SpecError(`items[${i}].match must be 0..1`);
+        try {
+            validateSpec({ version: 1, input: item.input, keep: item.keep, zooms: item.zooms });
+        } catch (e) {
+            throw new SpecError(`items[${i}]: ${(e as Error).message}`);
+        }
+    });
+    return data as unknown as SequenceSpec;
+}

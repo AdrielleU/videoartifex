@@ -1,9 +1,9 @@
-# VidArtifax with everything it needs: ffmpeg, Node, and faster-whisper with a
+# VideoArtifex with everything it needs: ffmpeg, Node, and faster-whisper with a
 # whisper model baked in, so transcription works offline.
 #
-#   docker build -t vidartifax .
-#   docker run --rm -v "$PWD:/work" -u "$(id -u):$(id -g)" vidartifax auto demo.mp4
-#   docker run --rm -v "$PWD:/work" -u "$(id -u):$(id -g)" -p 17211:17211 vidartifax ui --host 0.0.0.0
+#   docker build -t videoartifex .
+#   docker run --rm -v "$PWD:/work" -u "$(id -u):$(id -g)" videoartifex auto demo.mp4
+#   docker run --rm -v "$PWD:/work" -u "$(id -u):$(id -g)" -p 17211:17211 videoartifex ui --host 0.0.0.0
 FROM docker.io/library/node:22-trixie-slim
 
 RUN apt-get update \
