@@ -200,6 +200,16 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
         res.end(img);
     }
 
+    /**
+     * `<name>.edit.json` is only this video's edit if its input points back at
+     * it: `clip-beat.edit.json` may well be the edit that rendered
+     * `clip-beat.mp4` from `clip.mp4`. Returns why not, or null.
+     */
+    function foreignEdit(video: string, spec: { input?: unknown }): string | null {
+        const input = typeof spec.input === "string" ? resolve(dir, spec.input) : null;
+        return input && input !== video ? `${basename(sidecar(video, "edit.json"))} is the edit for ${spec.input}, not ${basename(video)}. Rename it to use it here.` : null;
+    }
+
     function project(name: string) {
         const video = file(name);
         const s = stem(name);
@@ -214,6 +224,8 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
             editText = readFileSync(editPath, "utf8");
             try {
                 edit = validateSpec(JSON.parse(editText));
+                editError = foreignEdit(video, edit as { input?: unknown }) ?? undefined;
+                if (editError) edit = undefined;
             } catch (e) {
                 editError = (e as Error).message;
             }
@@ -276,6 +288,14 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
             if (action !== "preview" && action !== "render") throw new HttpError(400, `can't ${action} a sequence`);
         }
         const video = action === "assemble" ? join(dir, name) : file(name);
+        if (action !== "assemble" && !isSequenceFile(name)) {
+            let own: { input?: unknown } | undefined;
+            try {
+                own = readJson(sidecar(video, "edit.json")) as typeof own;
+            } catch { /* a broken edit fails in the job itself, with its own message */ }
+            const foreign = own && foreignEdit(video, own);
+            if (foreign) throw new HttpError(409, foreign);
+        }
         const j: Job = { video: name, action, progress: 0, log: [], done: false };
         job = j;
         const say = (msg: string) => {

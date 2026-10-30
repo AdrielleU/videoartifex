@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { analyze, sidecar } from "./analyze/index.ts";
@@ -29,9 +30,10 @@ Usage:
   videoartifex beats <video> [--from 9.5 --to 12.8]
                                             tempo and beat times (<name>.beats.json); with a
                                             range, snaps it to beats and lists the beats near it
-  videoartifex trim <video> --from <s> --to <s> [--beats]
-                                            keep only that range in the edit (--beats snaps
-                                            both ends to the nearest beat; -o edit file)
+  videoartifex trim <video> --from <s> --to <s> [--beats] [-o clip.mp4]
+                                            keep only that range in the video's edit (--beats
+                                            snaps both ends to the nearest beat); -o clip.mp4
+                                            renders the range as a new clip instead
   videoartifex frames <video> --at 3,7.5      PNG snapshots (--grid to read focus points, --width px)
   videoartifex validate <edit.json>           check an edit file
   videoartifex ui [folder]                    web editor at http://localhost:17211 (--port, --host)
@@ -301,6 +303,19 @@ async function main() {
                 log(`snapped to beats: ${from}-${to} s`);
             }
             if (!(to > from)) throw new Error(`the range ${from}-${to} s is empty`);
+            if (v.output && VIDEO_EXT.has(extname(v.output).toLowerCase())) {
+                // A new clip, not an edit: render from a throwaway edit file. Leaving one next to
+                // the clip as <clip>.edit.json would read as the clip's own edit.
+                const tmp = mkdtempSync(join(tmpdir(), "videoartifex-trim-"));
+                try {
+                    const editFile = join(tmp, "trim.edit.json");
+                    writeFileSync(editFile, JSON.stringify({ version: 1, input: resolve(video), keep: [{ start: r3(from), end: r3(to) }] }));
+                    report(await render(editFile, { output: v.output, onProgress: progress() }));
+                } finally {
+                    rmSync(tmp, { recursive: true, force: true });
+                }
+                break;
+            }
             const out = resolve(v.output ?? sidecar(video, "edit.json"));
             // An existing edit keeps its zooms, captions and output settings; only the kept range changes.
             const spec = existsSync(out)

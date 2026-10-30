@@ -123,7 +123,7 @@ mkdir -p data && docker compose up -d   # then open http://localhost:17211
 | `videoartifex plan <video>` | Write `<name>.edit.json` from the analysis. |
 | `videoartifex render <edit.json or sequence.json>` | Render. `--preview` for a fast 540p draft. |
 | `videoartifex beats <video> [--from 9.5 --to 12.8]` | Tempo and beat times (`<name>.beats.json`). With a range, snaps it to the nearest beats. |
-| `videoartifex trim <video> --from 9.5 --to 12.8 --beats` | Keep only that range, snapped to beats with `--beats`. `-o` writes a separate edit file. |
+| `videoartifex trim <video> --from 9.5 --to 12.8 --beats` | Keep only that range, snapped to beats with `--beats`. `-o clip.mp4` renders it as a new clip. |
 | `videoartifex frames <video> --at 3,7.5 --grid` | PNG snapshots with a 10x10 grid for picking zoom points. |
 | `videoartifex validate <edit.json>` | Check an edit file. |
 | `videoartifex assemble <clips or folder> [--script s.md]` | Plan one video from many clips (`merge` works too). Writes `<name>.sequence.json`. |

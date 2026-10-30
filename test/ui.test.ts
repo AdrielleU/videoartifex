@@ -31,3 +31,26 @@ test("ui lists videos, saves only valid edits, and stays inside its folder", asy
         rmSync(dir, { recursive: true, force: true });
     }
 });
+
+test("ui uploads without overwriting and won't render another video's edit", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "videoartifex-ui-"));
+    writeFileSync(join(dir, "a.mp4"), "source");
+    const ui = await startUi({ dir, port: 0 });
+    try {
+        const up = (name: string) => fetch(`${ui.url}/api/upload?name=${encodeURIComponent(name)}`, { method: "PUT", body: "clip" });
+        assert.equal(((await (await up("a.mp4")).json()) as { name: string }).name, "a-2.mp4");
+        assert.equal(readFileSync(join(dir, "a.mp4"), "utf8"), "source");
+        assert.equal(((await (await up("../b.mp4")).json()) as { name: string }).name, "b.mp4");
+        assert.equal((await up("x.sh")).status, 400);
+        assert.equal((await up("a.edited.mp4")).status, 400);
+
+        // a-2.edit.json rendering a-2.mp4 from a.mp4 belongs to a.mp4's output, not to a-2.mp4.
+        writeFileSync(join(dir, "a-2.edit.json"), JSON.stringify({ version: 1, input: "a.mp4", keep: [{ start: 9, end: 12 }] }));
+        const run = await fetch(`${ui.url}/api/run?v=a-2.mp4&action=preview`, { method: "POST", body: "{}" });
+        assert.equal(run.status, 409);
+        assert.match(((await run.json()) as { error: string }).error, /edit for a\.mp4/);
+    } finally {
+        ui.close();
+        rmSync(dir, { recursive: true, force: true });
+    }
+});

@@ -1,6 +1,6 @@
 {
   "name": "videoartifex",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Edit screen recordings and talking-head videos in minutes with Claude Code: cut silences, auto-zoom, burn-in captions. Native ffmpeg, no editor.",
   "license": "MIT",
   "author": "AdrielleU",
