@@ -333,6 +333,11 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
                     break;
                 case "preview":
                 case "render":
+                    // A fresh upload has no edit yet: plan one (analyzing if needed) so render just works.
+                    if (!existsSync(sidecar(video, "edit.json"))) {
+                        const a = readJson(sidecar(video, "analysis.json")) as Analysis | undefined;
+                        writePlan(a ?? (await analyze(video, { log: say })).analysis);
+                    }
                     await doRender(action === "preview");
                     break;
                 default:
