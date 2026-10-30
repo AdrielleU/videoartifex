@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" alt="VideoArtifex" width="360">
+  </picture>
+</p>
+
 # VideoArtifex
 
 **Turn a raw recording into a finished video in minutes with Claude Code.**

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 72" width="360" height="72">
+  <g transform="translate(4 4)">
+  <rect width="64" height="64" rx="16" fill="#111827"/>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="none" stroke="#ffffff" stroke-opacity="0.12"/>
+  <rect x="12" y="13.5" width="11" height="5.5" rx="1.6" fill="none" stroke="#e5e7eb" stroke-width="2.2" stroke-opacity="0.9"/>
+  <rect x="6" y="19" width="37" height="28.5" rx="6" fill="none" stroke="#e5e7eb" stroke-width="2.6" stroke-opacity="0.9"/>
+  <path d="M46 28.5 L57.5 21.5 V45 L46 38 Z" fill="#fbbf24"/>
+  <circle cx="38.5" cy="23.6" r="1.7" fill="#f43f5e"/>
+  <path d="M10.5 24 H15.4 L17.9 35.2 L20.4 24 H25.3 L20.4 42 H15.4 Z M25.2 42 L29.9 24 H34.4 L39.1 42 H34.7 L33.8 38.3 H30.5 L29.6 42 Z M31.2 34.6 H33.1 L32.15 30.1 Z" transform="translate(1.6 1.6)" fill="#f43f5e" fill-rule="evenodd"/>
+  <path d="M10.5 24 H15.4 L17.9 35.2 L20.4 24 H25.3 L20.4 42 H15.4 Z M25.2 42 L29.9 24 H34.4 L39.1 42 H34.7 L33.8 38.3 H30.5 L29.6 42 Z M31.2 34.6 H33.1 L32.15 30.1 Z" transform="translate(-0.9 -0.9)" fill="#fbbf24" fill-rule="evenodd" opacity="0.94"/>
+  </g>
+  <text x="84" y="47" font-family="Inter, 'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" font-size="32" letter-spacing="-0.5" fill="#1f2937"><tspan font-weight="400">Video</tspan><tspan font-weight="700" fill="#e11d48">Artifex</tspan></text>
+</svg>
