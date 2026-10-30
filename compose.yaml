@@ -5,7 +5,7 @@
 #   mkdir -p data && docker compose up -d
 services:
   videoartifex:
-    image: ghcr.io/adrielleu/videoartifex:0.1.0
+    image: ghcr.io/adrielleu/videoartifex:0.1.1
     container_name: videoartifex
     restart: unless-stopped
     command: ["ui", "/work", "--host", "0.0.0.0"]

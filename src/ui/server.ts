@@ -1,6 +1,7 @@
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { analyze, sidecar } from "../analyze/index.ts";
 import { assemble } from "../assemble.ts";
@@ -350,11 +351,36 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
             });
     }
 
-    function serveFile(req: IncomingMessage, res: ServerResponse, p: string) {
+    /**
+     * Streams an uploaded video or script into the folder. It lands as a hidden
+     * file first, so the watcher and the list only see it once it's complete.
+     * An existing file is never replaced: the upload gets a free name instead.
+     */
+    async function upload(req: IncomingMessage, raw: string | null) {
+        const name = basename(raw ?? "").replace(/[\x00-\x1f/\\]/g, "").trim();
+        const ext = extname(name).toLowerCase();
+        if (!name || name.startsWith(".") || !(VIDEO.has(ext) || SCRIPT.has(ext))) throw new HttpError(400, `can't upload ${raw}: videos (${[...VIDEO].join(" ")}) and scripts (.md .txt) only`);
+        if (isOutput(name)) throw new HttpError(400, "names ending in .edited.mp4 or .preview.mp4 are reserved for renders");
+        let final = name;
+        for (let i = 2; existsSync(join(dir, final)); i++) final = `${stem(name)}-${i}${extname(name)}`;
+        const tmp = join(dir, `.upload-${process.pid}-${Date.now()}-${final}`);
+        try {
+            await pipeline(req, createWriteStream(tmp));
+            renameSync(tmp, join(dir, final));
+        } catch (e) {
+            rmSync(tmp, { force: true });
+            throw e;
+        }
+        log(`uploaded ${final}`);
+        return final;
+    }
+
+    function serveFile(req: IncomingMessage, res: ServerResponse, p: string, download = false) {
         const size = statSync(p).size;
         const type = TYPES[extname(p).toLowerCase()] ?? "application/octet-stream";
         const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
-        const headers = { "Content-Type": type, "Accept-Ranges": "bytes", "Cache-Control": "no-cache" };
+        const headers: Record<string, string> = { "Content-Type": type, "Accept-Ranges": "bytes", "Cache-Control": "no-cache" };
+        if (download) headers["Content-Disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(basename(p))}`;
         if (!range) {
             res.writeHead(200, { ...headers, "Content-Length": size });
             createReadStream(p).pipe(res);
@@ -418,13 +444,15 @@ export function startUi(opts: UiOptions): Promise<{ url: string; close: () => vo
             const o = JSON.parse((await body(req)) || "{}") as JobBody;
             startJob(v ?? "", url.searchParams.get("action") ?? "", o);
             json({ ok: true });
+        } else if (req.method === "PUT" && path === "/api/upload") {
+            json({ ok: true, name: await upload(req, url.searchParams.get("name")) });
         } else if (req.method === "GET" && path === "/api/events") {
             res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
             res.write(`data: ${JSON.stringify({ type: "hello", job })}\n\n`);
             clients.add(res);
             req.on("close", () => clients.delete(res));
         } else if (req.method === "GET" && path.startsWith("/file/")) {
-            serveFile(req, res, file(decodeURIComponent(path.slice(6))));
+            serveFile(req, res, file(decodeURIComponent(path.slice(6))), url.searchParams.has("download"));
         } else {
             throw new HttpError(404, "not found");
         }

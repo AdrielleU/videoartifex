@@ -121,6 +121,9 @@ dialog::backdrop { background: #0009; }
 dialog h3 { margin: 0 0 6px; }
 dialog .list { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
 dialog .list label { display: block; padding: 3px 0; }
+#dropzone { position: fixed; inset: 0; background: #0f1115d9; border: 2px dashed var(--accent); display: grid; place-items: center; font-size: 18px; z-index: 10; pointer-events: none; }
+a.button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; color: inherit; text-decoration: none; }
+a.button:hover { border-color: var(--accent); }
 [hidden] { display: none !important; }
 
 @media (max-width: 1000px) {
@@ -142,7 +145,7 @@ dialog .list label { display: block; padding: 3px 0; }
     <aside id="videos"></aside>
     <div id="center">
         <div id="stage">
-            <div id="empty"><h2>No video selected</h2><p>Put video files in this folder and pick one on the left.</p></div>
+            <div id="empty"><h2>No video selected</h2><p>Upload a video (or drop one anywhere on the page), then pick it on the left.</p></div>
             <div id="frame" hidden>
                 <div id="pic"><video id="src" preload="auto" playsinline></video><div id="focus" hidden></div></div>
                 <video id="out" preload="auto" playsinline controls hidden></video>
@@ -159,6 +162,7 @@ dialog .list label { display: block; padding: 3px 0; }
                 <button data-mode="preview" title="The last preview render">Preview render</button>
                 <button data-mode="edited" title="The last final render">Final</button>
             </span>
+            <a id="download" class="button" hidden title="Save this render to your computer">Download</a>
         </div>
         <div id="board" hidden></div>
         <canvas id="timeline"></canvas>
@@ -186,6 +190,8 @@ dialog .list label { display: block; padding: 3px 0; }
     </div>
 </main>
 <div id="toast" hidden></div>
+<div id="dropzone" hidden>Drop videos or scripts to upload</div>
+<input type="file" id="upload" multiple accept="video/*,.mkv,.md,.txt" hidden>
 <dialog id="merge">
     <h3>Merge videos</h3>
     <p class="hint">Plans one video from several clips. With a script, clips are put in script order and trimmed to the best take of each line. Without one, they follow recording order. You review the plan before anything renders.</p>
@@ -224,7 +230,7 @@ const api = async (path, opts) => {
 };
 
 const S = {
-    videos: [], current: null, proj: null, edit: null,
+    videos: [], current: null, uploading: false, proj: null, edit: null,
     derived: null, mode: "live", tab: "cuts",
     marks: { in: null, out: null }, selZoom: -1, wordAnchor: -1, wordSel: null,
     undo: [], redo: [], savedText: null, saveTimer: null, saveError: null,
@@ -653,10 +659,12 @@ function setMode(mode) {
     S.mode = mode;
     for (const b of $("modes").children) b.classList.toggle("on", b.dataset.mode === mode);
     outVideo.hidden = mode === "live";
+    $("download").hidden = mode === "live";
     $("pic").hidden = mode !== "live";
     if (mode !== "live") {
         const src = `/file/${encodeURIComponent(file)}?t=${S.proj.outputs[mode]}`;
         if (!outVideo.src.endsWith(src)) outVideo.src = src;
+        $("download").href = `${src}&download`;
         // Rendered files have their own frame; the output frame box already matches it.
     }
 }
@@ -1101,6 +1109,7 @@ async function loadVideos() {
         }),
         el("button", { textContent: "+ Merge videos…", onclick: openMerge, disabled: !S.videos.length }),
         el("div", { className: "side-h", textContent: "Videos" }),
+        el("button", { textContent: "+ Upload videos…", onclick: () => $("upload").click(), disabled: S.uploading }),
     );
     list.append(...S.videos.map(v => el("div", {
         className: "item" + (v.name === S.current ? " sel" : ""),
@@ -1111,7 +1120,8 @@ async function loadVideos() {
         el("span", { className: "badge" + (v.edited ? " ok" : ""), textContent: "rendered" }),
     ))));
     for (const [i, v] of S.videos.entries()) list.querySelectorAll(".item")[S.sequences.length + i].dataset.name = v.name;
-    if (!S.videos.length) list.append(el("p", { className: "hint", textContent: "No videos in this folder." }));
+    if (S.scripts.length) list.append(el("div", { className: "side-h", textContent: "Scripts" }), ...S.scripts.map(n => el("div", { className: "hint", textContent: n })));
+    if (!S.videos.length) list.append(el("p", { className: "hint", textContent: "No videos yet. Upload some, or drop them on the page." }));
     showJob(data.job);
 }
 
@@ -1243,6 +1253,57 @@ $("m-go").onclick = async () => {
     await startAssemble(name, videos, $("m-script").value);
     toast("Planning… this transcribes clips that haven't been analyzed yet");
 };
+
+// ---------- upload ----------
+
+/** Sends one file as the raw request body so big videos stream straight to disk. */
+function uploadOne(f, onProgress) {
+    return new Promise((ok, fail) => {
+        const x = new XMLHttpRequest();
+        x.open("PUT", `/api/upload?name=${encodeURIComponent(f.name)}`);
+        x.upload.onprogress = e => e.lengthComputable && onProgress(e.loaded / e.total);
+        x.onload = () => {
+            const data = JSON.parse(x.responseText || "{}");
+            x.status < 300 ? ok(data.name) : fail(new Error(data.error || x.statusText));
+        };
+        x.onerror = () => fail(new Error(`upload of ${f.name} failed`));
+        x.send(f);
+    });
+}
+
+async function uploadFiles(files) {
+    if (!files.length || S.uploading) return;
+    S.uploading = true;
+    await loadVideos();
+    let first = null, failed = 0;
+    for (const [i, f] of files.entries()) {
+        const n = files.length > 1 ? ` (${i + 1}/${files.length})` : "";
+        try {
+            const name = await uploadOne(f, p => setStatus(`Uploading ${f.name}${n}: ${Math.round(p * 100)}%`));
+            if (!first && !/\.(md|txt)$/i.test(name)) first = name;
+        } catch (e) {
+            failed++;
+            toast(e.message);
+        }
+    }
+    S.uploading = false;
+    await loadVideos();
+    setStatus(failed ? `${failed} of ${files.length} uploads failed` : `Uploaded ${files.length} file${files.length > 1 ? "s" : ""}`, !!failed);
+    if (first && !S.current) await open(first);
+}
+
+$("upload").onchange = () => { uploadFiles([...$("upload").files]); $("upload").value = ""; };
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer?.types.includes("Files");
+addEventListener("dragenter", e => { if (hasFiles(e)) { dragDepth++; $("dropzone").hidden = false; } });
+addEventListener("dragleave", e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; $("dropzone").hidden = true; } });
+addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener("drop", e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0; $("dropzone").hidden = true;
+    uploadFiles([...e.dataTransfer.files]);
+});
 
 $("play").onclick = togglePlay;
 for (const b of $("modes").children) b.onclick = () => setMode(b.dataset.mode);
