@@ -25,6 +25,7 @@ const VIDEO = new Set([".mp4", ".mov", ".mkv", ".webm", ".m4v"]);
 const TYPES: Record<string, string> = {
     ".mp4": "video/mp4", ".m4v": "video/mp4", ".mov": "video/quicktime", ".webm": "video/webm",
     ".mkv": "video/x-matroska", ".png": "image/png", ".json": "application/json",
+    ".md": "text/markdown; charset=utf-8", ".txt": "text/plain; charset=utf-8",
 };
 /** Pure modules the page imports, so its live preview uses the renderer's own math. */
 const LIBS = new Set(["timeline", "zoom", "captions"]);

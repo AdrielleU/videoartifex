@@ -43,6 +43,11 @@ aside, section { min-height: 0; overflow: auto; }
 .badges { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
 .badge { font-size: 10px; padding: 0 5px; border-radius: 4px; background: var(--line); color: var(--dim); }
 .badge.ok { background: #1d3b2a; color: var(--keep); }
+a.badge { text-decoration: none; }
+a.badge:hover { outline: 1px solid var(--keep); }
+#videos .row { display: flex; gap: 6px; align-items: flex-start; justify-content: space-between; }
+a.dl { flex: none; display: inline-flex; padding: 2px; border-radius: 4px; color: var(--dim); }
+a.dl:hover { color: var(--accent); background: var(--line); }
 
 #center { display: grid; grid-template-rows: 1fr auto auto; min-width: 0; }
 #stage { position: relative; display: flex; align-items: center; justify-content: center; padding: 12px; min-height: 0; overflow: hidden; }
@@ -1091,6 +1096,18 @@ function showJob(job) {
 
 const stem = name => name.replace(/\.[^.]+$/, "");
 
+/** A link that saves a file from the folder instead of opening it. */
+const fileLink = (name, props) => el("a", { href: `/file/${encodeURIComponent(name)}?download`, download: name, onclick: e => e.stopPropagation(), ...props });
+const dlIcon = (name, title = `Download ${name}`) => {
+    const a = fileLink(name, { className: "dl", title });
+    a.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg>';
+    return a;
+};
+/** The "rendered" badge, which downloads the final render once there is one. */
+const renderedBadge = (done, outStem) => done
+    ? fileLink(`${outStem}.edited.mp4`, { className: "badge ok", textContent: "rendered ↓", title: `Download the final render (${outStem}.edited.mp4)` })
+    : el("span", { className: "badge", textContent: "rendered" });
+
 async function loadVideos() {
     const data = await api("/api/videos");
     $("dir").textContent = data.dir;
@@ -1101,9 +1118,10 @@ async function loadVideos() {
     list.replaceChildren(
         el("div", { className: "side-h", textContent: "Merged videos" }),
         ...S.sequences.map(q => {
+            const outStem = q.name.replace(/\.sequence\.json$/, "");
             const item = el("div", { className: "item" + (q.name === S.current ? " sel" : ""), onclick: () => openSequence(q.name) },
-                q.name.replace(/\.sequence\.json$/, ""),
-                el("div", { className: "badges" }, el("span", { className: "badge", textContent: "sequence" }), el("span", { className: "badge" + (q.edited ? " ok" : ""), textContent: "rendered" })));
+                el("div", { className: "row" }, el("span", { textContent: outStem }), dlIcon(q.name, `Download the sequence file ${q.name}`)),
+                el("div", { className: "badges" }, el("span", { className: "badge", textContent: "sequence" }), renderedBadge(q.edited, outStem)));
             item.dataset.name = q.name;
             return item;
         }),
@@ -1114,13 +1132,13 @@ async function loadVideos() {
     list.append(...S.videos.map(v => el("div", {
         className: "item" + (v.name === S.current ? " sel" : ""),
         onclick: () => open(v.name),
-    }, v.name, el("div", { className: "badges" },
+    }, el("div", { className: "row" }, el("span", { textContent: v.name }), dlIcon(v.name)), el("div", { className: "badges" },
         el("span", { className: "badge" + (v.analyzed ? " ok" : ""), textContent: "analyzed" }),
         el("span", { className: "badge" + (v.edit ? " ok" : ""), textContent: "edit" }),
-        el("span", { className: "badge" + (v.edited ? " ok" : ""), textContent: "rendered" }),
+        renderedBadge(v.edited, stem(v.name)),
     ))));
     for (const [i, v] of S.videos.entries()) list.querySelectorAll(".item")[S.sequences.length + i].dataset.name = v.name;
-    if (S.scripts.length) list.append(el("div", { className: "side-h", textContent: "Scripts" }), ...S.scripts.map(n => el("div", { className: "hint", textContent: n })));
+    if (S.scripts.length) list.append(el("div", { className: "side-h", textContent: "Scripts" }), ...S.scripts.map(n => el("div", { className: "row hint" }, el("span", { textContent: n }), dlIcon(n))));
     if (!S.videos.length) list.append(el("p", { className: "hint", textContent: "No videos yet. Upload some, or drop them on the page." }));
     showJob(data.job);
 }
