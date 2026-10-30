@@ -9,6 +9,7 @@ import { findEvents } from "../src/analyze/activity.ts";
 import { subtitlesToWords } from "../src/analyze/transcribe.ts";
 import { zoomsFromActivity } from "../src/plan.ts";
 import { buildGraph, pickFps } from "../src/render.ts";
+import { snapToBeat } from "../src/analyze/beats.ts";
 
 const close = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 
@@ -173,4 +174,11 @@ test("graph wires cuts, zoom, padding and captions in order", () => {
     assert.ok(v.indexOf("perspective=X") < v.indexOf("pad=1080:1920"));
     assert.ok(v.indexOf("pad=") < v.indexOf("subtitles=filename=captions.ass"));
     assert.match(g, /asetnsamples=n=1600:p=0/);
+});
+
+test("snapToBeat picks the nearest beat", () => {
+    const b = { tempo: 161.5, beats: [{ t: 9.381, strength: 0.2 }, { t: 9.752, strength: 0 }, { t: 12.376, strength: 0.2 }, { t: 12.748, strength: 0 }] };
+    assert.equal(snapToBeat(b, 9.5), 9.381);
+    assert.equal(snapToBeat(b, 12.8), 12.748);
+    assert.equal(snapToBeat({ tempo: 0, beats: [] }, 3), 3);
 });

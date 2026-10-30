@@ -1,22 +1,14 @@
-import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { extname, join } from "node:path";
 import { run } from "../ffmpeg.ts";
+import { runPython } from "../python.ts";
 import { validateTranscript, type Transcript, type Word } from "../spec.ts";
-
-const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "scripts", "transcribe.py");
 
 export interface TranscribeOptions {
     /** Whisper model: tiny, base, small, medium, large-v3. Default base. */
     model?: string;
     language?: string;
-}
-
-function hasCommand(cmd: string, args: string[]): boolean {
-    const r = spawnSync(cmd, args, { stdio: "ignore" });
-    return !r.error && r.status === 0;
 }
 
 /**
@@ -25,32 +17,15 @@ function hasCommand(cmd: string, args: string[]): boolean {
  * first use.
  */
 export async function transcribe(video: string, outFile: string, opts: TranscribeOptions = {}): Promise<Transcript> {
-    let cmd: string;
-    let pre: string[];
-    if (hasCommand("python3", ["-c", "import faster_whisper"])) {
-        cmd = "python3";
-        pre = [SCRIPT];
-    } else if (hasCommand("uv", ["--version"])) {
-        cmd = "uv";
-        pre = ["run", "--quiet", "--no-project", "--with", "faster-whisper", "python", SCRIPT];
-    } else {
-        throw new Error(
-            "Transcription needs faster-whisper. Install uv (https://docs.astral.sh/uv/) " +
-            "or `pip install faster-whisper`, or pass an existing transcript with --transcript (JSON, SRT or VTT).",
-        );
-    }
-
     const dir = mkdtempSync(join(tmpdir(), "videoartifex-"));
     try {
         const wav = join(dir, "audio.wav");
         await run(["-y", "-i", video, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", wav]);
-        const args = [...pre, wav, outFile, "--model", opts.model ?? "base"];
+        const args = [wav, outFile, "--model", opts.model ?? "base"];
         if (opts.language) args.push("--language", opts.language);
-        await new Promise<void>((resolve, reject) => {
-            const p = spawn(cmd, args, { stdio: ["ignore", "inherit", "inherit"] });
-            p.on("error", reject);
-            p.on("close", code => (code === 0 ? resolve() : reject(new Error(`transcription failed (exit ${code})`))));
-        });
+        await runPython("faster-whisper", "transcribe.py", args,
+            "Transcription needs faster-whisper. Install uv (https://docs.astral.sh/uv/) " +
+            "or `pip install faster-whisper`, or pass an existing transcript with --transcript (JSON, SRT or VTT).");
     } finally {
         rmSync(dir, { recursive: true, force: true });
     }

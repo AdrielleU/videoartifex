@@ -81,6 +81,25 @@ rendering:
 
 The sequence format is in [edit-format.md](edit-format.md#sequence-file-sequencejson).
 
+## Music and beat-cut clips (beats / trim)
+
+For music, or any cut that should land on the beat (a loop, a sample, a
+short clip "from about 9.5 to 12.8 s"):
+
+```bash
+videoartifex beats "<video>" --from 9.5 --to 12.8   # snaps the range, lists beats near it
+videoartifex trim "<video>" --from 9.5 --to 12.8 --beats -o "<name>-beat.edit.json"
+videoartifex render "<name>-beat.edit.json" -o "<name>-beat.mp4"
+```
+
+`beats` writes `<name>.beats.json` (tempo, and each beat's time and
+`strength` from 0 to 1) and reuses it afterwards. Quiet beats (strength near
+0) are usually a break or the gap before a drop: good places to end a clip so
+it holds a whole phrase. If the snapped range cuts a phrase short, move an end
+by a beat and say so. `trim` without `-o` changes the video's own edit file,
+keeping its zooms and captions. Give `render` an `-o` for a separate clip, or
+it overwrites `<name>.edited.mp4`.
+
 ## Notes
 
 - `videoartifex auto "<video>"` does steps 1, 2 and 4 with no review. Use it only

@@ -1,4 +1,4 @@
-# VideoArtifex with everything it needs: ffmpeg, Node, and faster-whisper with a
+# VideoArtifex with everything it needs: ffmpeg, Node, librosa, and faster-whisper with a
 # whisper model baked in, so transcription works offline.
 #
 #   docker build -t videoartifex .
@@ -12,13 +12,15 @@ RUN apt-get update \
  && ffmpeg -version && ffprobe -version
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.18 /uv /usr/local/bin/
-ENV HF_HOME=/opt/hf
+ENV HF_HOME=/opt/hf NUMBA_CACHE_DIR=/tmp/numba
 
-# Install faster-whisper once into the system Python (no cache copy) and
-# download the model. Override with --build-arg WHISPER_MODEL=small for better
-# accuracy at the cost of a bigger image.
+# Install faster-whisper (transcription) and librosa (beat detection) once into
+# the system Python (no cache copy) and download the model. Override with
+# --build-arg WHISPER_MODEL=small for better accuracy at the cost of a bigger
+# image. librosa's numba JIT caches under /tmp so any user can run it.
 ARG WHISPER_MODEL=base
-RUN uv pip install --system --break-system-packages --no-cache faster-whisper \
+RUN uv pip install --system --break-system-packages --no-cache faster-whisper librosa \
+ && python3 -c "import librosa" \
  && python3 -c "from faster_whisper import WhisperModel; WhisperModel('${WHISPER_MODEL}', compute_type='int8')" \
  && chmod -R a+rwX /opt/hf
 

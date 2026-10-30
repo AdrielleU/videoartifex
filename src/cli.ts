@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { analyze, sidecar } from "./analyze/index.ts";
+import { detectBeats, snapToBeat, validateBeats, type Beats } from "./analyze/beats.ts";
 import { checkFfmpeg, ffmpegMajor } from "./ffmpeg.ts";
 import { snapshot } from "./frames.ts";
 import { plan, type Analysis, type PlanOptions } from "./plan.ts";
@@ -11,7 +12,8 @@ import { loadSpec, render, type RenderResult } from "./render.ts";
 import { DEFAULT_PORT, startUi } from "./ui/server.ts";
 import { assemble } from "./assemble.ts";
 import { loadSequence, renderSequence } from "./sequence.ts";
-import { isSequence, type SequenceSpec } from "./spec.ts";
+import { isSequence, validateSpec, type SequenceSpec } from "./spec.ts";
+import { pythonFor } from "./python.ts";
 
 const HELP = `VideoArtifex: edit videos with native ffmpeg, made for Claude Code
 
@@ -24,10 +26,16 @@ Usage:
                                             plan one video stitched from many clips
                                             (writes <name>.sequence.json; render it)
   videoartifex merge ...                      same as assemble
+  videoartifex beats <video> [--from 9.5 --to 12.8]
+                                            tempo and beat times (<name>.beats.json); with a
+                                            range, snaps it to beats and lists the beats near it
+  videoartifex trim <video> --from <s> --to <s> [--beats]
+                                            keep only that range in the edit (--beats snaps
+                                            both ends to the nearest beat; -o edit file)
   videoartifex frames <video> --at 3,7.5      PNG snapshots (--grid to read focus points, --width px)
   videoartifex validate <edit.json>           check an edit file
   videoartifex ui [folder]                    web editor at http://localhost:17211 (--port, --host)
-  videoartifex doctor                         check ffmpeg and transcription setup
+  videoartifex doctor                         check ffmpeg, transcription and beat detection
 
 Analyze options:
   --transcript <file>   use an existing transcript (JSON, SRT, VTT)
@@ -79,6 +87,9 @@ const opts = {
     name: { type: "string" },
     "min-match": { type: "string" },
     host: { type: "string" },
+    from: { type: "string" },
+    to: { type: "string" },
+    beats: { type: "boolean" },
 } as const;
 
 type Values = ReturnType<typeof parseArgs<{ options: typeof opts; allowPositionals: true }>>["values"];
@@ -130,6 +141,18 @@ function doPlan(analysisFile: string, analysis: Analysis, v: Values, out?: strin
     log(`wrote ${file}`);
     return file;
 }
+
+/** Reuses `<name>.beats.json` unless --force. */
+async function getBeats(video: string, force?: boolean): Promise<Beats> {
+    const file = sidecar(video, "beats.json");
+    if (!force && existsSync(file)) return validateBeats(JSON.parse(readFileSync(file, "utf8")));
+    log("detecting beats...");
+    const b = await detectBeats(video, file);
+    log(`wrote ${file}`);
+    return b;
+}
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
 
 function progress() {
     let last = -1;
@@ -247,6 +270,49 @@ async function main() {
             report(r);
             break;
         }
+        case "beats": {
+            const video = need(arg, "video");
+            const b = await getBeats(video, v.force);
+            const from = num(v.from, "from");
+            const to = num(v.to, "to");
+            log(`tempo ${b.tempo} BPM (a beat every ${(60 / b.tempo).toFixed(3)} s), ${b.beats.length} beats`);
+            let shown = b.beats;
+            if (from !== undefined || to !== undefined) {
+                const s = from !== undefined ? snapToBeat(b, from) : 0;
+                const e = to !== undefined ? snapToBeat(b, to) : Infinity;
+                if (from !== undefined) log(`--from ${from} -> beat at ${s}`);
+                if (to !== undefined) log(`--to ${to} -> beat at ${e}`);
+                if (e > s && Number.isFinite(e)) log(`snapped range ${s}-${e} s: ${(e - s).toFixed(2)} s, ${b.beats.filter(x => x.t >= s && x.t < e).length} beats`);
+                // A second either side, so the neighbours are there to choose from.
+                shown = b.beats.filter(x => x.t >= s - 1 && x.t <= e + 1);
+            }
+            if (v.json) process.stdout.write(JSON.stringify({ tempo: b.tempo, beats: shown }) + "\n");
+            else for (const x of shown) process.stdout.write(`${x.t.toFixed(3).padStart(8)}  ${x.strength.toFixed(2)}  ${"#".repeat(Math.round(x.strength * 20))}\n`);
+            break;
+        }
+        case "trim": {
+            const video = need(arg, "video");
+            let from = num(v.from, "from");
+            let to = num(v.to, "to");
+            if (from === undefined || to === undefined) throw new Error("--from and --to are required, e.g. videoartifex trim clip.mp4 --from 9.5 --to 12.8");
+            if (v.beats) {
+                const b = await getBeats(video, v.force);
+                [from, to] = [snapToBeat(b, from), snapToBeat(b, to)];
+                log(`snapped to beats: ${from}-${to} s`);
+            }
+            if (!(to > from)) throw new Error(`the range ${from}-${to} s is empty`);
+            const out = resolve(v.output ?? sidecar(video, "edit.json"));
+            // An existing edit keeps its zooms, captions and output settings; only the kept range changes.
+            const spec = existsSync(out)
+                ? (JSON.parse(readFileSync(out, "utf8")) as Record<string, unknown>)
+                : { version: 1, input: relative(dirname(out), resolve(video)) };
+            spec.keep = [{ start: r3(from), end: r3(to) }];
+            validateSpec(spec);
+            writeFileSync(out, JSON.stringify(spec, null, 2) + "\n");
+            log(`keep ${r3(from)}-${r3(to)} s (${(to - from).toFixed(2)} s); wrote ${out}`);
+            log(`render it: videoartifex render "${out}"`);
+            break;
+        }
         case "frames": {
             if (!v.at) throw new Error("--at is required, e.g. --at 3,7.5");
             const at = v.at.split(",").map(s => num(s.trim(), "at")!);
@@ -284,9 +350,14 @@ async function main() {
             const missing = needed.filter(f => !filters.has(f));
             log(missing.length ? `  missing filters: ${missing.join(", ")} (install a full ffmpeg build)` : "  filters: ok");
             if (ffmpegMajor(version) > 0 && ffmpegMajor(version) < 6) log("  ffmpeg 6 or newer is recommended");
-            const uv = spawnSync("uv", ["--version"], { encoding: "utf8" });
-            const py = spawnSync("python3", ["-c", "import faster_whisper"], { stdio: "ignore" });
-            log(`transcription: ${!uv.error && uv.status === 0 ? `uv (${uv.stdout.trim()}), faster-whisper installs on first use` : py.status === 0 ? "python3 with faster-whisper" : "unavailable: install uv or `pip install faster-whisper`, or pass --transcript"}`);
+            const uv = spawnSync("uv", ["--version"], { encoding: "utf8" }).stdout?.trim();
+            // Same order the helpers use: a python3 that has the module wins over uv.
+            const how = (module: string) => {
+                const p = pythonFor(module);
+                return p === "python3" ? `python3 with ${module}` : p === "uv" ? `${uv}, ${module} installs on first use` : null;
+            };
+            log(`transcription: ${how("faster-whisper") ?? "unavailable: install uv or `pip install faster-whisper`, or pass --transcript"}`);
+            log(`beat detection: ${how("librosa") ?? "unavailable: install uv or `pip install librosa`"}`);
             break;
         }
         default:
