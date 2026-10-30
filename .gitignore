@@ -3,3 +3,4 @@ dist/
 *.edited.mp4
 *.preview.mp4
 .videoartifex-tmp/
+data/
