@@ -107,6 +107,13 @@ hand. `Ctrl+Z` undoes, including changes that came from disk.
 It listens on 127.0.0.1 only. Use `--port` to change the port and
 `--host 0.0.0.0` inside Docker.
 
+To run the editor as a container, use the image published on each release
+and the `compose.yaml` in this repo. Your videos go in `./data`:
+
+```bash
+mkdir -p data && docker compose up -d   # then open http://localhost:17211
+```
+
 ## Commands
 
 | Command | What it does |

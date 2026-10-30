@@ -1,0 +1,15 @@
+# Runs the VideoArtifex web editor at http://localhost:17211.
+# Videos and project files live in ./data next to this file (a plain folder,
+# not a named volume), so they are easy to reach and back up.
+#
+#   mkdir -p data && docker compose up -d
+services:
+  videoartifex:
+    image: ghcr.io/adrielleu/videoartifex:0.1.0
+    container_name: videoartifex
+    restart: unless-stopped
+    command: ["ui", "/work", "--host", "0.0.0.0"]
+    ports:
+      - "17211:17211"
+    volumes:
+      - ./data:/work:Z
